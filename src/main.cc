@@ -8,7 +8,7 @@
  *
  * Please see COPYING for details
  *
- * Copyright (c) 2005-2021 Brenden Matthews, Philip Kovacs, et. al.
+ * Copyright (c) 2005-2024 Brenden Matthews, Philip Kovacs, et. al.
  *	(see AUTHORS)
  * All rights reserved.
  *
@@ -33,20 +33,36 @@
 #include "build.h"
 #include "config.h"
 #include "conky.h"
-#include "display-output.hh"
-#include "lua-config.hh"
+#include "output/display-output.hh"
+#include "lua/lua-config.hh"
 
 #ifdef BUILD_X11
-#include "x11.h"
+#include "output/x11.h"
 #endif /* BUILD_X11 */
 
 #ifdef BUILD_CURL
-#include "ccurl_thread.h"
+#include "data/network/ccurl_thread.h"
 #endif /* BUILD_CURL */
 
+#if defined(__linux__)
+#include "data/os/linux.h"
+#endif /* Linux */
+
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
-#include "freebsd.h"
+#include "data/os/freebsd.h"
 #endif /* FreeBSD */
+
+#if defined(__NetBSD__)
+#include "data/os/netbsd.h"
+#endif /* NetBSD */
+
+#if defined(__OpenBSD__)
+#include "data/os/openbsd.h"
+#endif /* OpenBSD */
+
+#if defined(__HAIKU__)
+#include "data/os/haiku.h"
+#endif /* Haiku */
 
 #ifdef BUILD_BUILTIN_CONFIG
 #include "defconfig.h"
@@ -56,9 +72,10 @@
 #endif /* BUILD_OLD_CONFIG */
 #endif /* BUILD_BUILTIN_CONFIG */
 
+static void print_short_version() { std::cout << VERSION << std::endl; }
+
 static void print_version() {
-  std::cout << _(PACKAGE_NAME " " VERSION " compiled " BUILD_DATE
-                              " for " BUILD_ARCH
+  std::cout << _(PACKAGE_NAME " " VERSION " compiled for " BUILD_ARCH
                               "\n"
                               "\nCompiled in features:\n\n"
                               "System config file: " SYSTEM_CONFIG_FILE
@@ -119,9 +136,9 @@ static void print_version() {
 #ifdef BUILD_IMLIB2
             << _("  * Imlib2\n")
 #endif /* BUILD_IMLIB2 */
-#ifdef HAVE_SOME_SOUNDCARD_H
+#ifdef HAVE_SOUNDCARD_H
             << _("  * OSS mixer support\n")
-#endif /* HAVE_SOME_SOUNDCARD_H */
+#endif /* HAVE_SOUNDCARD_H */
 #ifdef BUILD_MIXER_ALSA
             << _("  * ALSA mixer support\n")
 #endif /* BUILD_MIXER_ALSA */
@@ -233,7 +250,8 @@ static void print_help(const char *prog_name) {
          "window. Command line options will override configurations defined in "
          "config\n"
          "file.\n"
-         "   -v, --version             version\n"
+         "   -v, --version             version with build details\n"
+         "   -V, --short-version       short version\n"
          "   -q, --quiet               quiet mode\n"
          "   -D, --debug               increase debugging output, ie. -DD for "
          "more debugging\n"
@@ -266,13 +284,17 @@ static void print_help(const char *prog_name) {
          "   -i COUNT                  number of times to update " PACKAGE_NAME
          " (and quit)\n"
          "   -p, --pause=SECS          pause for SECS seconds at startup "
-         "before doing anything\n",
-         prog_name);
+         "before doing anything\n"
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
+    defined(__HAIKU__) || defined(__NetBSD__) || defined(__OpenBSD__)
+         "   -U, --unique              only one conky process can be created\n"
+#endif /* Linux || FreeBSD || Haiku || NetBSD || OpenBSD */
+         , prog_name);
 }
 
 inline void reset_optind() {
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
-    defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+    defined(__OpenBSD__) || defined(__DragonFly__)
   optind = optreset = 1;
 #else
   optind = 0;
@@ -290,6 +312,8 @@ int main(int argc, char **argv) {
   g_sigterm_pending = 0;
   g_sighup_pending = 0;
   g_sigusr2_pending = 0;
+
+  bool unique_process = false;
 
 #ifdef BUILD_CURL
   struct curl_global_initializer {
@@ -321,8 +345,10 @@ int main(int argc, char **argv) {
         global_debug_level++;
         break;
       case 'v':
-      case 'V':
         print_version();
+        return EXIT_SUCCESS;
+      case 'V':
+        print_short_version();
         return EXIT_SUCCESS;
       case 'c':
         current_config = optarg;
@@ -345,11 +371,24 @@ int main(int argc, char **argv) {
         window.window = strtol(optarg, nullptr, 0);
         break;
 #endif /* BUILD_X11 */
-
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
+    defined(__HAIKU__) || defined(__NetBSD__) || defined(__OpenBSD__)
+      case 'U':
+        unique_process = true;
+        break;
+#endif /* Linux || FreeBSD || Haiku || NetBSD || OpenBSD */
       case '?':
         return EXIT_FAILURE;
     }
   }
+
+#if defined(__linux__) || defined(__FreeBSD__) || defined(__FreeBSD_kernel__) || \
+    defined(__HAIKU__) || defined(__NetBSD__) || defined(__OpenBSD__)
+  if (unique_process && is_conky_already_running()) {
+    NORM_ERR("already running");
+    return 0;
+  }
+#endif /* Linux || FreeBSD || Haiku || NetBSD || OpenBSD */
 
   try {
     set_current_config();
@@ -380,6 +419,11 @@ int main(int argc, char **argv) {
 
   conky::shutdown_display_outputs();
 
+#ifdef BSD_COMMON
+  bsdcommon::deinit_kvm();
+#endif
+
+//TODO(gmb): Move this to bsdcommon and remove external kd.
 #if defined(__FreeBSD__) || defined(__FreeBSD_kernel__)
   kvm_close(kd);
 #endif

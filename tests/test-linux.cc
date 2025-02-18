@@ -8,7 +8,7 @@
  *
  * Please see COPYING for details
  *
- * Copyright (c) 2005-2021 Brenden Matthews, Philip Kovacs, et. al.
+ * Copyright (c) 2005-2024 Brenden Matthews, Philip Kovacs, et. al.
  *	(see AUTHORS)
  * All rights reserved.
  *
@@ -28,7 +28,7 @@
 
 #include "catch2/catch.hpp"
 
-#include <linux.h>
+#include <data/os/linux.h>
 
 TEST_CASE("get_entropy_avail returns 0", "[get_entropy_avail]") {
   unsigned int unused = 0;

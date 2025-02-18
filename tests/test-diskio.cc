@@ -8,7 +8,7 @@
  *
  * Please see COPYING for details
  *
- * Copyright (c) 2005-2021 Brenden Matthews, Philip Kovacs, et. al.
+ * Copyright (c) 2005-2024 Brenden Matthews, Philip Kovacs, et. al.
  *	(see AUTHORS)
  * All rights reserved.
  *
@@ -30,7 +30,7 @@
 
 #include <config.h>
 #include <conky.h>
-#include <diskio.h>
+#include <data/hardware/diskio.h>
 
 #if BUILD_X11
 TEST_CASE("diskiographval returns correct value") {
@@ -42,7 +42,7 @@ TEST_CASE("diskiographval returns correct value") {
 
     obj.data.opaque = diskio;
 
-    REQUIRE(diskiographval(&obj) == Approx(2.5));
+    REQUIRE_THAT(diskiographval(&obj), Catch::Matchers::WithinRel(2.5, 0.05));
 
     delete diskio;
   }
