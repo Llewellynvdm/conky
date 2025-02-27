@@ -8,7 +8,7 @@
  *
  * Please see COPYING for details
  *
- * Copyright (c) 2005-2021 Brenden Matthews, Philip Kovacs, et. al.
+ * Copyright (c) 2005-2024 Brenden Matthews, Philip Kovacs, et. al.
  *	(see AUTHORS)
  * All rights reserved.
  *
@@ -27,8 +27,9 @@
  */
 
 #include "catch2/catch.hpp"
-#include "conky.h"
-#include "lua-config.hh"
+
+#include <conky.h>
+#include <lua/lua-config.hh>
 
 TEST_CASE("Expressions can be evaluated", "[evaluate]") {
   state = std::make_unique<lua::state>();

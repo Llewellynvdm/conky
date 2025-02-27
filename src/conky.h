@@ -9,7 +9,7 @@
  * Please see COPYING for details
  *
  * Copyright (c) 2004, Hannu Saransaari and Lauri Hakkarainen
- * Copyright (c) 2005-2021 Brenden Matthews, Philip Kovacs, et. al.
+ * Copyright (c) 2005-2024 Brenden Matthews, Philip Kovacs, et. al.
  *	(see AUTHORS)
  * All rights reserved.
  *
@@ -32,14 +32,18 @@
 
 #define __STDC_FORMAT_MACROS
 
+#include "config.h"
+
 #include <arpa/inet.h>
 #include <config.h>      /* defines */
 #include <sys/utsname.h> /* struct uname_s */
 #include <csignal>
+#include <filesystem>
 #include <memory>
-#include "colours.h"
+
+#include "content/colours.hh"
 #include "common.h" /* at least for struct dns_data */
-#include "luamm.hh"
+#include "lua/luamm.hh"
 
 #if defined(HAS_MCHECK_H)
 #include <mcheck.h>
@@ -72,35 +76,35 @@ char *strndup(const char *s, size_t n);
 struct text_object;
 
 #ifdef BUILD_HDDTEMP
-#include "hddtemp.h"
+#include "data/hardware/hddtemp.h"
 #endif /* BUILD_HDDTEMP */
 
 #ifdef BUILD_MOC
-#include "moc.h"
+#include "data/audio/moc.h"
 #endif /* BUILD_MOC */
 
 #ifdef BUILD_MPD
-#include "mpd.h"
+#include "data/audio/mpd.h"
 #endif /* BUILD_MPD */
 
 #ifdef BUILD_MYSQL
-#include "mysql.h"
+#include "data/mysql.h"
 #endif /* BUILD_MYSQL */
 
 #ifdef BUILD_PORT_MONITORS
-#include "tcp-portmon.h"
+#include "data/network/tcp-portmon.h"
 #endif
 
 #ifdef BUILD_XMMS2
-#include "xmms2.h"
+#include "data/audio/xmms2.h"
 #endif /* BUILD_XMMS2 */
 
 #ifdef BUILD_APCUPSD
-#include "apcupsd.h"
+#include "data/hardware/apcupsd.h"
 #endif /* BUILD_APCUPSD */
 
 /* sony support */
-#include "sony.h"
+#include "data/hardware/sony.h"
 
 /* A size for temporary, static buffers to use when
  * one doesn't know what to choose. Defaults to 256.  */
@@ -170,7 +174,7 @@ struct information {
       memmax, memdirty, shmem, legacymem, memactive, meminactive, memwired,
       memlaundry;
   unsigned long long swap, swapfree, swapmax;
-  unsigned long long bufmem, buffers, cached, free_bufcache;
+  unsigned long long bufmem, buffers, cached, free_bufcache, free_cached;
 
   unsigned short procs;
   unsigned short run_procs;
@@ -311,11 +315,6 @@ void set_updatereset(int);
 int get_updatereset(void);
 int get_total_updates(void);
 
-int dpi_scale(int value);
-
-int get_saved_coordinates_x(int);
-int get_saved_coordinates_y(int);
-
 /* defined in conky.c */
 int spaced_print(char *, int, const char *, int, ...)
     __attribute__((format(printf, 3, 5)));
@@ -348,7 +347,7 @@ extern conky::simple_config_setting<bool> utf8_mode;
 extern conky::range_config_setting<unsigned int> max_user_text;
 
 /* path to config file */
-extern std::string current_config;
+extern std::filesystem::path current_config;
 
 #define DEFAULT_TEXT_BUFFER_SIZE_S "##DEFAULT_TEXT_BUFFER_SIZE"
 

@@ -3,7 +3,7 @@
 #
 # Please see COPYING for details
 #
-# Copyright (c) 2005-2021 Brenden Matthews, et. al. (see AUTHORS) All rights
+# Copyright (c) 2005-2024 Brenden Matthews, et. al. (see AUTHORS) All rights
 # reserved.
 #
 # This program is free software: you can redistribute it and/or modify it under
@@ -21,20 +21,31 @@
 include(CMakeDependentOption)
 include(DependentOption)
 
+# This flag is for developers of conky and automated tests in conky repository.
+# It should not be enabled by package maintainers as produced binary is -O0.
+option(MAINTAINER_MODE "Use defaults for development environment (debug, testing, etc.)" false)
+option(BUILD_TESTING "Build test binary" ${MAINTAINER_MODE})
+cmake_dependent_option(RUN_TESTS "Run tests once the build is complete" false
+  "BUILD_TESTING" false)
+# Use gcov (requires LLVM compiler) to generate code coverage
+option(CODE_COVERAGE "Enable code coverage report generation" false)
+
 if(NOT CMAKE_BUILD_TYPE)
   if(MAINTAINER_MODE)
+    message(WARNING "Default build type: Debug (because MAINTAINER_MODE is set)")
     set(
       CMAKE_BUILD_TYPE Debug
       CACHE
-        STRING
-        "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
+      STRING
+      "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
       FORCE)
   else(MAINTAINER_MODE)
+    message(STATUS "Default build type: RelWithDebInfo")
     set(
       CMAKE_BUILD_TYPE RelWithDebInfo
       CACHE
-        STRING
-        "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
+      STRING
+      "Choose the type of build, options are: None Debug Release RelWithDebInfo MinSizeRel."
       FORCE)
   endif(MAINTAINER_MODE)
 endif(NOT CMAKE_BUILD_TYPE)
@@ -44,44 +55,65 @@ set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_COMPILE_WARNING_AS_ERROR ${MAINTAINER_MODE})
 
-if(MAINTAINER_MODE)
-  set(CMAKE_COMPILE_WARNING_AS_ERROR true)
-  set(BUILD_TESTS true)
-endif(MAINTAINER_MODE)
+if(NOT OS_OPENBSD)
+  # Always use libc++ when compiling w/ clang
+  # Not on OpenBSD because that's the default for its vendored Clang
+  add_compile_options(
+    $<$<COMPILE_LANG_AND_ID:CXX,Clang>:-stdlib=libc++>)
+  add_link_options($<$<COMPILE_LANG_AND_ID:CXX,Clang>:-stdlib=libc++>)
+endif(NOT OS_OPENBSD)
 
-# Always use libc++ when compiling w/ clang
-add_compile_options($<$<COMPILE_LANG_AND_ID:CXX,Clang>:-stdlib=libc++>)
-add_link_options($<$<COMPILE_LANG_AND_ID:CXX,Clang>:-stdlib=libc++>)
+add_compile_options(
+  $<$<COMPILE_LANG_AND_ID:CXX,Clang>:-Wno-unknown-warning-option>
+  $<$<COMPILE_LANG_AND_ID:CXX,GCC>:-Wno-unknown-warning>)
 
-option(CHECK_CODE_QUALITY "Check code formatting/quality with clang" false)
+# Makes builds fully reproducible for environments (such as NixOS) that prefer
+# building the binary from a clean slate. This makes build defaults and process
+# avoid optimizations like compiler caching and reusing already built files.
+option(REPRODUCIBLE_BUILD "Makes builds fully reproducible" OFF)
+
+if(REPRODUCIBLE_BUILD)
+  set(USE_CCACHE_DEFAULT OFF)
+else()
+  set(USE_CCACHE_DEFAULT ON)
+endif()
+mark_as_advanced(USE_CCACHE_DEFAULT)
+# Instead of rebuilding objects from scratch, the compiler will reuse cached
+# parts of compilation in order to speed up compilation.
+option(USE_CCACHE "Sccache/ccache will be used (if installed) to speed up compilation" ${USE_CCACHE_DEFAULT})
+
+option(CHECK_CODE_QUALITY "Check code formatting/quality with clang" ${MAINTAINER_MODE})
 
 option(RELEASE "Build release package" false)
 mark_as_advanced(RELEASE)
-
-option(MAINTAINER_MODE "Enable maintainer mode" false)
-option(CODE_COVERAGE "Enable code coverage report generation" false)
 
 option(BUILD_DOCS "Build documentation" false)
 option(BUILD_EXTRAS "Build extras (includes syntax files for editors)" false)
 
 option(BUILD_I18N "Enable if you want internationalization support" true)
+
+option(BUILD_COLOUR_NAME_MAP "Include mappings of colour name -> RGB (e.g. red -> ff0000)" true)
+
 if(BUILD_I18N)
   set(LOCALE_DIR "${CMAKE_INSTALL_PREFIX}/share/locale"
-      CACHE STRING "Directory containing the locales")
+    CACHE STRING "Directory containing the locales")
 endif(BUILD_I18N)
 
 # Some standard options
 set(SYSTEM_CONFIG_FILE "/etc/conky/conky.conf"
-    CACHE STRING "Default system-wide Conky configuration file")
+  CACHE STRING "Default system-wide Conky configuration file")
+
 # use FORCE below to make sure this changes when CMAKE_INSTALL_PREFIX is
 # modified
 if(NOT LIB_INSTALL_DIR)
   set(LIB_INSTALL_DIR "${CMAKE_INSTALL_PREFIX}/lib${LIB_SUFFIX}")
 endif(NOT LIB_INSTALL_DIR)
+
 set(PACKAGE_LIBRARY_DIR "${LIB_INSTALL_DIR}/conky"
-    CACHE STRING "Package library path (where Lua bindings are installed"
-    FORCE)
+  CACHE STRING "Package library path (where Lua bindings are installed"
+  FORCE)
 set(DEFAULTNETDEV "eno1" CACHE STRING "Default networkdevice")
 
 # Mac only override
@@ -90,13 +122,13 @@ if(OS_DARWIN)
 endif(OS_DARWIN)
 
 set(XDG_CONFIG_FILE "$HOME/.config/conky/conky.conf"
-    CACHE STRING "Configfile of the user (XDG)")
+  CACHE STRING "Configfile of the user (XDG)")
 set(CONFIG_FILE "$HOME/.conkyrc" CACHE STRING "Configfile of the user")
 set(MAX_USER_TEXT_DEFAULT "16384"
-    CACHE STRING
-          "Default maximum size of config TEXT buffer, i.e. below TEXT line.")
+  CACHE STRING
+  "Default maximum size of config TEXT buffer, i.e. below TEXT line.")
 set(DEFAULT_TEXT_BUFFER_SIZE "256"
-    CACHE STRING "Default size used for temporary, static text buffers")
+  CACHE STRING "Default size used for temporary, static text buffers")
 set(MAX_NET_INTERFACES "256" CACHE STRING "Maximum number of network devices")
 
 # Platform specific options Linux only
@@ -127,7 +159,6 @@ cmake_dependent_option(
   "OS_DARWIN" false)
 
 # Optional features etc
-
 option(BUILD_WLAN "Enable wireless support" false)
 
 option(BUILD_BUILTIN_CONFIG "Enable builtin default configuration" true)
@@ -135,7 +166,7 @@ option(BUILD_BUILTIN_CONFIG "Enable builtin default configuration" true)
 option(BUILD_IOSTATS "Enable disk I/O stats" true)
 
 option(BUILD_OLD_CONFIG "Enable support for the old syntax of configurations"
-       true)
+  true)
 
 option(BUILD_MATH "Enable math support" true)
 
@@ -190,28 +221,38 @@ dependent_option(BUILD_IMLIB2 "Enable Imlib2 support" true
 dependent_option(BUILD_XSHAPE "Enable Xshape support" true
   "BUILD_X11" false
   "Xshape support requires X11")
-dependent_option(BUILD_XINPUT "Build Xinput 2 support" true
-  "BUILD_X11;BUILD_MOUSE_EVENTS" false
-  "Xinput 2 support requires X11 and BUILD_MOUSE_EVENTS enabled")
+dependent_option(BUILD_XINPUT "Build Xinput 2 support (slow)" false
+  "BUILD_X11" false
+  "Xinput 2 support requires X11")
 
 # if we build with any GUI support
 if(BUILD_X11)
   set(BUILD_GUI true)
 endif(BUILD_X11)
+
 if(BUILD_WAYLAND)
   set(BUILD_GUI true)
 endif(BUILD_WAYLAND)
 
 dependent_option(BUILD_MOUSE_EVENTS "Enable mouse event support" true
-  "BUILD_WAYLAND OR OWN_WINDOW" false
-  "Mouse event support requires Wayland or OWN_WINDOW enabled")
+  "BUILD_WAYLAND OR BUILD_X11" false
+  "Mouse event support requires Wayland or X11 enabled")
 
 # Lua library options
-option(BUILD_LUA_CAIRO "Build cairo bindings for Lua" false)
+dependent_option(BUILD_LUA_CAIRO "Build Cairo bindings for Lua" false
+  "BUILD_GUI" false
+  "Cairo Lua bindings depend on BUILD_GUI")
+dependent_option(BUILD_LUA_CAIRO_XLIB "Build Cairo & Xlib interoperability for Lua" true
+  "BUILD_X11;BUILD_LUA_CAIRO" false
+  "Cairo Xlib Lua bindings require Cairo and X11")
 dependent_option(BUILD_LUA_IMLIB2 "Build Imlib2 bindings for Lua" false
   "BUILD_X11;BUILD_IMLIB2" false
   "Imlib2 Lua bindings require X11 and Imlib2")
-option(BUILD_LUA_RSVG "Build rsvg bindings for Lua" false)
+dependent_option(BUILD_LUA_RSVG "Build rsvg bindings for Lua" false
+  "BUILD_GUI" false
+  "RSVG Lua bindings depend on BUILD_GUI")
+
+option(BUILD_OPENSOUNDSYS "Build with Open Sound System support" true)
 
 option(BUILD_AUDACIOUS "Build audacious (music player) support" false)
 
@@ -236,22 +277,25 @@ option(BUILD_ICAL "Enable if you want iCalendar (RFC 5545) support" false)
 option(BUILD_IRC "Enable if you want IRC support" false)
 
 option(BUILD_HTTP "Enable if you want HTTP support" false)
-if(BUILD_HTTP)
+
+if(NOT BUILD_HTTP)
   set(HTTPPORT "10080" CACHE STRING "Port to use for out_to_http")
-endif(BUILD_HTTP)
+else(NOT BUILD_HTTP)
+  set(HTTPPORT "10080")
+endif(NOT BUILD_HTTP)
 
 option(BUILD_ICONV "Enable iconv support" false)
 
 option(BUILD_CMUS "Enable support for cmus music player" true)
 
 option(BUILD_JOURNAL "Enable support for reading from the systemd journal"
-       false)
+  false)
 
 option(BUILD_PULSEAUDIO
-       "Enable support for Pulseaudio's default sink and source" false)
+  "Enable support for Pulseaudio's default sink and source" false)
 
 option(BUILD_INTEL_BACKLIGHT
-       "Enable support for Intel backlight" false)
+  "Enable support for Intel backlight" false)
 
 run_dependency_checks()
 
@@ -269,6 +313,6 @@ message(STATUS "CMAKE_CXX_FLAGS_RELEASE: " ${CMAKE_CXX_FLAGS_RELEASE})
 
 message(STATUS "CMAKE_C_FLAGS_RELWITHDEBINFO: " ${CMAKE_C_FLAGS_RELWITHDEBINFO})
 message(STATUS "CMAKE_CXX_FLAGS_RELWITHDEBINFO: "
-               ${CMAKE_CXX_FLAGS_RELWITHDEBINFO})
+  ${CMAKE_CXX_FLAGS_RELWITHDEBINFO})
 
 message(STATUS "CMAKE_BUILD_TYPE: " ${CMAKE_BUILD_TYPE})

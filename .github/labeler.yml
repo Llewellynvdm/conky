@@ -1,31 +1,244 @@
 documentation:
-  - doc/*
-  - doc/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - doc/**/*
+          - data/conky*.conf
 
 extras:
-  - extras/*
-  - extras/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - extras/**/*
 
 sources:
-  - src/*
-  - src/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/**/*
 
 tests:
-  - tests/**/*
-  - tests/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**/*
 
 web:
-  - web/*
-  - web/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/**/*
+
+javascript:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/**/*.tsx
+          - web/**/*.jsx
+          - web/**/*.ts
+          - web/**/*.js
 
 appimage:
-  - appimage/*
-  - appimage/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - appimage/*
+          - appimage/**/*
 
 3rdparty:
-  - 3rdparty/*
-  - 3rdparty/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - 3rdparty/**/*
 
 gh-actions:
-  - .github/workflows/*
-  - .github/workflows/**/*
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/workflows/*
+          - .github/workflows/**/*
+          - .github/labeler.yml
+          - .github/pull_request_template.md
+
+dependencies:
+  - changed-files:
+      - any-glob-to-any-file:
+          - web/package-lock.json
+          - cmake/ConkyPlatformChecks.cmake
+
+audio:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/audio/**/*
+
+power:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/hardware/apcupsd.cc
+          - src/data/hardware/apcupsd.h
+          - src/data/hardware/bsdapm.cc
+          - src/data/hardware/bsdapm.h
+          - src/data/hardware/smapi.cc
+          - src/data/hardware/smapi.h
+
+'display: console':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/display-console.cc
+          - src/output/display-console.hh
+'display: file':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/display-file.cc
+          - src/output/display-file.hh
+'display: http':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/display-http.cc
+          - src/output/display-http.hh
+'display: ncurses':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/nc.cc
+          - src/output/nc.h
+          - src/output/display-ncurses.cc
+          - src/output/display-ncurses.hh
+'display: wayland':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/wl_protocols/**/*
+          - src/output/wl.cc
+          - src/output/wl.h
+          - src/output/display-wayland.cc
+          - src/output/display-wayland.hh
+'display: x11':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/*x11*.cc
+          - src/output/*x11*.h
+          - src/output/*x11*.hh
+
+'build system':
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'CMakeLists.txt'
+          - 'cmake/**/*'
+
+cairo:
+  - changed-files:
+      - any-glob-to-any-file:
+          - 'lua/*cairo*'
+
+'disk io':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/hardware/diskio.cc
+          - src/data/hardware/diskio.h
+
+'sensors':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/hardware/hddtemp.cc
+          - src/data/hardware/hddtemp.h
+          - src/data/hardware/i8k.cc
+          - src/data/hardware/i8k.h
+          - src/data/hardware/sony.cc
+          - src/data/hardware/sony.h
+
+cpu:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/hardware/cpu.cc
+          - src/data/hardware/cpu.h
+          - src/data/proc.cc
+          - src/data/proc.h
+          - src/data/top.cc
+          - src/data/top.h
+
+lua:
+  - changed-files:
+      - any-glob-to-any-file:
+          - lua/**/*
+          - src/lua/**/*
+
+'os: linux':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/linux.cc
+          - src/data/os/linux.h
+
+'os: dragonfly':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/dragonfly.cc
+          - src/data/os/dragonfly.h
+
+'os: freebsd':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/freebsd.cc
+          - src/data/os/freebsd.h
+
+'os: haiku':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/haiku.cc
+          - src/data/os/haiku.h
+
+'os: netbsd':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/netbsd.cc
+          - src/data/os/netbsd.h
+
+'os: openbsd':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/openbsd.cc
+          - src/data/os/openbsd.h
+
+'os: solaris':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/solaris.cc
+          - src/data/os/solaris.h
+
+'os: macos':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/os/darwin_sip.h
+          - src/data/os/darwin.h
+          - src/data/os/darwin.mm
+
+'mouse events':
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/mouse-events.cc
+          - src/mouse-events.h
+
+networking:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/network/**/*
+
+mail:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/network/mail.cc
+          - src/data/network/mail.h
+
+calendar:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/network/ical.cc
+          - src/data/network/ical.h
+
+nvidia:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/data/hardware/nvidia.cc
+          - src/data/hardware/nvidia.h
+
+rendering:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/output/gui.cc
+          - src/output/gui.h
+          - src/specials.cc
+          - src/specials.h
+
+text:
+  - changed-files:
+      - any-glob-to-any-file:
+          - src/content/**/*
