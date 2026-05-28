@@ -80,6 +80,8 @@
 
 #cmakedefine BUILD_NVIDIA 0
 
+#cmakedefine BUILD_NVIDIA_NVML 0
+
 #cmakedefine BUILD_XMMS2 1
 
 #cmakedefine BUILD_HDDTEMP 1

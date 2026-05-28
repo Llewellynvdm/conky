@@ -22,6 +22,7 @@ include(FindPkgConfig)
 include(CheckFunctionExists)
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
+include(FetchContent)
 
 # Check for some headers
 check_include_files(sys/statfs.h HAVE_SYS_STATFS_H)
@@ -812,6 +813,12 @@ if(BUILD_NVIDIA)
     message(FATAL_ERROR "Unable to find XNVCtrl library")
   endif(XNVCtrl_INCLUDE_PATH AND XNVCtrl_LIB)
 endif(BUILD_NVIDIA)
+
+if(BUILD_NVIDIA_NVML)
+  if(NOT ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64"))
+    message(FATAL_ERROR "Currently only x86_64 is supported, but yours is ${CMAKE_SYSTEM_PROCESSOR}.")
+  endif()
+endif(BUILD_NVIDIA_NVML)
 
 if(BUILD_IMLIB2)
   pkg_search_module(IMLIB2 REQUIRED imlib2 Imlib2)

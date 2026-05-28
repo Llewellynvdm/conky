@@ -25,6 +25,9 @@ data/defconfig.h
 /build.h
 src/colour-names.hh
 
+# Don't ignore NVML library
+!3rdparty/nvml/libnvidia-ml.so
+
 # Compiler cache
 .cache
 

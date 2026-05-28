@@ -130,8 +130,11 @@
 #include "data/mysql.h"
 #endif /* BUILD_MYSQL */
 #ifdef BUILD_NVIDIA
-#include "data/hardware/nvidia.h"
+#include "data/hardware/nvidia_XNVCtrl.h"
 #endif /* BUILD_NVIDIA */
+#ifdef BUILD_NVIDIA_NVML
+#include "data/hardware/nvidia_nvml.h"
+#endif /* BUILD_NVIDIA_NVML */
 #ifdef BUILD_CURL
 #include "data/network/ccurl_thread.h"
 #endif /* BUILD_CURL */
@@ -2124,6 +2127,10 @@ void clean_up(void) {
   llua_shutdown_hook();
 #if defined BUILD_RSS
   xmlCleanupParser();
+#endif
+
+#ifdef BUILD_NVIDIA_NVML
+  shutdown_nvml();
 #endif
 
   free_specials(specials);

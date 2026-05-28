@@ -92,7 +92,7 @@
  * [gradient color 2] [scale] [-t] [-l] target_id}
  */
 
-#include "nvidia.h"
+#include "nvidia_XNVCtrl.h"
 #include <X11/Xlib.h>
 #include "../../conky.h"
 #include "../../content/temphelper.h"

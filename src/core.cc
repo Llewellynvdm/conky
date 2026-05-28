@@ -76,9 +76,14 @@
 #include "logging.h"
 #include "lua/llua.h"
 #include "output/nc.h"
+
 #ifdef BUILD_NVIDIA
-#include "data/hardware/nvidia.h"
+#include "data/hardware/nvidia_XNVCtrl.h"
 #endif /* BUILD_NVIDIA */
+#ifdef BUILD_NVIDIA_NVML
+#include "data/hardware/nvidia_nvml.h"
+#endif /* BUILD_NVIDIA_NVML */
+
 #include <inttypes.h>
 #include "content/scroll.h"
 #include "content/specials.h"
@@ -1910,6 +1915,49 @@ struct text_object *construct_text_object(char *s, const char *arg, long line,
   END OBJ(combine, nullptr) parse_combine_arg(obj, arg);
   obj->callbacks.print = &print_combine;
   obj->callbacks.free = &free_combine;
+#ifdef BUILD_NVIDIA_NVML
+  END OBJ_ARG(
+      nvidia, 0,
+      "nvidia needs an argument") if (!create_nvml_query(obj, arg,
+                                                         NVMLQueryType::Text)) {
+    COMMAND_ARG_ERR("nvidia", "nvidia: invalid argument specified: '{}'", arg);
+  }
+  obj->callbacks.print = &print_nvml_value;
+  obj->callbacks.free = &free_nvml_query;
+
+  END OBJ_ARG(
+      nvidiabar, 0,
+      "nvidiabar needs an argument") if (!create_nvml_query(obj, arg,
+                                                            NVMLQueryType::
+                                                                Bar)) {
+    COMMAND_ARG_ERR("nvidiabar", "nvidiabar: invalid argument specified: '{}'",
+                    arg);
+  }
+  obj->callbacks.barval = &get_nvml_percent_value;
+  obj->callbacks.free = &free_nvml_query;
+
+  END OBJ_ARG(
+      nvidiagraph, 0,
+      "nvidiagraph needs an argument") if (!create_nvml_query(obj, arg,
+                                                              NVMLQueryType::
+                                                                  Graph)) {
+    COMMAND_ARG_ERR("nvidiagraph",
+                    "nvidiagraph: invalid argument specified: '{}'", arg);
+  }
+  obj->callbacks.graphval = &get_nvml_percent_value;
+  obj->callbacks.free = &free_nvml_query;
+
+  END OBJ_ARG(
+      nvidiagauge, 0,
+      "nvidiagauge needs an argument") if (!create_nvml_query(obj, arg,
+                                                              NVMLQueryType::
+                                                                  Gauge)) {
+    COMMAND_ARG_ERR("nvidiagauge",
+                    "nvidiagauge: invalid argument specified: '{}'", arg);
+  }
+  obj->callbacks.gaugeval = &get_nvml_percent_value;
+  obj->callbacks.free = &free_nvml_query;
+#endif /* BUILD_NVIDIA_NVML */
 #ifdef BUILD_NVIDIA
   END OBJ_ARG(nvidia, 0, "nvidia needs an argument") if (set_nvidia_query(
                                                              obj, arg,

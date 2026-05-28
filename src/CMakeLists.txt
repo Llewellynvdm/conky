@@ -466,9 +466,14 @@ if(BUILD_RSS)
 endif(BUILD_RSS)
 
 if(BUILD_NVIDIA)
-  set(nvidia data/hardware/nvidia.cc data/hardware/nvidia.h)
+  set(nvidia data/hardware/nvidia_XNVCtrl.cc data/hardware/nvidia_XNVCtrl.h)
   set(optional_sources ${optional_sources} ${nvidia})
 endif(BUILD_NVIDIA)
+
+if(BUILD_NVIDIA_NVML)
+  set(nvidia data/hardware/nvidia_nvml.cc data/hardware/nvidia_nvml.h)
+  set(optional_sources ${optional_sources} ${nvidia})
+endif(BUILD_NVIDIA_NVML)
 
 if(BUILD_IMLIB2)
   set(imlib2 conky-imlib2.cc conky-imlib2.h)

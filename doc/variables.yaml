@@ -1540,7 +1540,7 @@ values:
     desc: Short hostname (same as 'hostname -s' shell command).
   - name: nvidia
     desc: |-
-      Nvidia graphics card information via the XNVCtrl library.
+      Nvidia graphics card information via the XNVCtrl library or the NVML library.
 
       Temperatures are printed as float, all other values as integers.
 
@@ -1549,37 +1549,41 @@ values:
 
       **Possible arguments:**
 
-      | Argument           | Alias       | Description                                                     |
-      |--------------------|-------------|-----------------------------------------------------------------|
-      | `gputemp`          | `temp`      | GPU temperature                                                 |
-      | `gputempthreshold` | `threshold` | Temperature threshold where the GPU will reduce its clock speed |
-      | `ambienttemp`      | `ambient`   | Ambient temperature outside the graphics card                   |
-      | `gpufreqcur`       | `gpufreq`   | Current GPU clock speed                                         |
-      | `gpufreqmin`       |             | Minimum GPU clock speed                                         |
-      | `gpufreqmax`       |             | Maximum GPU clock speed                                         |
-      | `memfreqcur`       | `memfreq`   | Current memory clock speed                                      |
-      | `memfreqmin`       |             | Minimum memory clock speed                                      |
-      | `memfreqmax`       |             | Maximum memory clock speed                                      |
-      | `mtrfreqcur`       | `mtrfreq`   | Current memory transfer rate clock speed                        |
-      | `mtrfreqmin`       |             | Minimum memory transfer rate clock speed                        |
-      | `mtrfreqmax`       |             | Maximum memory transfer rate clock speed                        |
-      | `perflevelcur`     | `perflevel` | Current performance level                                       |
-      | `perflevelmin`     |             | Lowest performance level                                        |
-      | `perflevelmax`     |             | Highest performance level                                       |
-      | `perfmode`         |             | Performance mode                                                |
-      | `gpuutil`          |             | GPU utilization %                                               |
-      | `membwutil`        |             | Memory bandwidth utilization %                                  |
-      | `videoutil`        |             | Video engine utilization %                                      |
-      | `pcieutil`         |             | PCIe bandwidth utilization %                                    |
-      | `memused`          | `mem`       | Amount of used memory                                           |
-      | `memfree`          | `memavail`  | Amount of free memory                                           |
-      | `memmax`           | `memtotal`  | Total amount of memory                                          |
-      | `memutil`          | `memperc`   | Memory utilization %                                            |
-      | `fanspeed`         |             | Fan speed                                                       |
-      | `fanlevel`         |             | Fan level %                                                     |
-      | `imagequality`     |             | Image quality                                                   |
-      | `modelname`        |             | Model name of the GPU card                                      |
-      | `driverversion`    |             | Driver version                                                  |
+      | Argument           | Alias       | Description                                                     | XNVCtrl | NVML |
+      |--------------------|-------------|-----------------------------------------------------------------|---------|------|
+      | `gputemp`          | `temp`      | GPU temperature                                                 | ✅      | ✅   |
+      | `gputempthreshold` | `threshold` | Temperature threshold where the GPU will reduce its clock speed | ✅      | ✅   |
+      | `ambienttemp`      | `ambient`   | Ambient temperature outside the graphics card                   | ✅      | ❌   |
+      | `gpufreqcur`       | `gpufreq`   | Current GPU clock speed                                         | ✅      | ✅   |
+      | `gpufreqmin`       |             | Minimum GPU clock speed                                         | ✅      | ✅   |
+      | `gpufreqmax`       |             | Maximum GPU clock speed                                         | ✅      | ✅   |
+      | `memfreqcur`       | `memfreq`   | Current memory clock speed                                      | ✅      | ✅   |
+      | `memfreqmin`       |             | Minimum memory clock speed                                      | ✅      | ✅   |
+      | `memfreqmax`       |             | Maximum memory clock speed                                      | ✅      | ✅   |
+      | `mtrfreqcur`       | `mtrfreq`   | Current memory transfer rate clock speed                        | ✅      | ❌   |
+      | `mtrfreqmin`       |             | Minimum memory transfer rate clock speed                        | ✅      | ❌   |
+      | `mtrfreqmax`       |             | Maximum memory transfer rate clock speed                        | ✅      | ❌   |
+      | `perflevelcur`     | `perflevel` | Current performance level                                       | ✅      | ✅   |
+      | `perflevelmin`     |             | Lowest performance level                                        | ✅      | ✅   |
+      | `perflevelmax`     |             | Highest performance level                                       | ✅      | ✅   |
+      | `perfmode`         |             | Performance mode                                                | ✅      | ❌   |
+      | `gpuutil`          |             | GPU utilization %                                               | ✅      | ✅   |
+      | `membwutil`        |             | Memory bandwidth utilization %                                  | ✅      | ❌   |
+      | `videoutil`        |             | Video engine utilization %                                      | ✅      | ❌   |
+      | `pcieutil`         |             | PCIe bandwidth utilization %                                    | ✅      | ❌   |
+      | `memused`          | `mem`       | Amount of used memory                                           | ✅      | ✅   |
+      | `memfree`          | `memavail`  | Amount of free memory                                           | ✅      | ✅   |
+      | `memmax`           | `memtotal`  | Total amount of memory                                          | ✅      | ✅   |
+      | `memutil`          | `memperc`   | Memory utilization %                                            | ✅      | ✅   |
+      | `fanspeed`         |             | Fan speed                                                       | ✅      | ✅   |
+      | `fanlevel`         |             | Fan level %                                                     | ✅      | ✅   |
+      | `imagequality`     |             | Image quality                                                   | ✅      | ❌   |
+      | `modelname`        |             | Model name of the GPU card                                      | ✅      | ✅   |
+      | `driverversion`    |             | Driver version                                                  | ✅      | ✅   |
+      | `arch      `       |             | GPU architecture name                                           | ❌      | ✅   |
+      | `powerlimit`       |             | Power limit in Watts                                            | ❌      | ✅   |
+      | `powerinstant`     |             | Power usage in Watts                                            | ❌      | ✅   |
+      | `poweravg`         |             | Power usage averaged over one second in Watts                   | ❌      | ✅   |
     args:
       - argument
       - (GPU_ID)
@@ -1607,6 +1611,7 @@ values:
       * `perfmode`
       * `memtotal` (`memmax`)
       * `fanspeed`
+      * `powerlimit`
     args:
       - (height),(width)
       - argument
