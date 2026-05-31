@@ -45,6 +45,7 @@
 
 #include <cerrno>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <memory>
 #include <sstream>
@@ -267,6 +268,9 @@ struct window {
   struct wl_surface *surface;
   struct zwlr_layer_surface_v1 *layer_surface;
   int scale, pending_scale;
+  int current_buffer;
+  std::shared_ptr<cairo_surface_t> shm_surface[2];
+  std::unique_ptr<uint8_t[]> private_buffer;
   std::shared_ptr<cairo_surface_t> cairo_surface;
   std::shared_ptr<cairo_t> cr;
   PangoLayout *layout;
@@ -1048,9 +1052,17 @@ struct shm_pool {
 struct shm_surface_data {
   struct wl_buffer *buffer;
   struct shm_pool *pool;
+  bool busy;
 };
 
 static const cairo_user_data_key_t shm_surface_data_key = {0};
+
+static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
+  auto *surface_data = static_cast<struct shm_surface_data *>(data);
+  surface_data->busy = false;
+}
+
+static const struct wl_buffer_listener buffer_listener = {buffer_release};
 
 struct wl_buffer *get_buffer_from_cairo_surface(cairo_surface_t *surface) {
   struct shm_surface_data *data;
@@ -1179,6 +1191,8 @@ static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
 
   data->buffer = wl_shm_pool_create_buffer(pool->pool, offset, scaled.x(),
                                            scaled.y(), stride, format);
+  data->busy = false;
+  wl_buffer_add_listener(data->buffer, &buffer_listener, data);
 
   return std::shared_ptr<conky::draw_surface>(surface, [](auto it) {
     if (it) cairo_surface_destroy(it);
@@ -1191,35 +1205,53 @@ void window_allocate_buffer(struct window *window) {
   int scale = window->pending_scale;
   struct shm_pool *pool;
   pool = shm_pool_create(
-      window->shm, data_length_for_shm_surface(&window->rectangle, scale));
+      window->shm, data_length_for_shm_surface(&window->rectangle, scale) * 2);
   if (!pool) {
     LOG_ERROR("could not allocate shm pool for {}x{} window",
               window->rectangle.width(), window->rectangle.height());
     return;
   }
+  for (int i = 0; i < 2; ++i) {
+    window->shm_surface[i] = create_shm_surface_from_pool(
+        window->shm, &window->rectangle, pool, scale);
+    auto cs = window->shm_surface[i].get();
+    cairo_surface_set_device_scale(cs, scale, scale);
 
-  window->cairo_surface = create_shm_surface_from_pool(
-      window->shm, &window->rectangle, pool, scale);
-  auto cs = window->cairo_surface.get();
-  cairo_surface_set_device_scale(cs, scale, scale);
+    if (!window->shm_surface[i]) {
+      shm_pool_destroy(pool);
+      return;
+    }
 
-  if (!window->cairo_surface) {
-    shm_pool_destroy(pool);
-    return;
+    /* make sure we destroy the pool when the surface is destroyed */
+    struct shm_surface_data *data;
+    data = static_cast<struct shm_surface_data *>(
+        cairo_surface_get_user_data(cs, &shm_surface_data_key));
+    data->pool = (i == 1) ? pool : nullptr;
   }
+  window->current_buffer = 0;
 
-  window->cr = std::shared_ptr<cairo_t>(cairo_create(cs), [](auto it) {
-    if (it) cairo_destroy(it);
-  });
-  auto cr = window->cr.get();
-  window->layout = pango_cairo_create_layout(cr);
-  window->pango_context = pango_cairo_create_context(cr);
+  int stride = stride_for_shm_surface(&window->rectangle, scale);
+  int length = data_length_for_shm_surface(&window->rectangle, scale);
 
-  /* make sure we destroy the pool when the surface is destroyed */
-  struct shm_surface_data *data;
-  data = static_cast<struct shm_surface_data *>(
-      cairo_surface_get_user_data(cs, &shm_surface_data_key));
-  data->pool = pool;
+  window->private_buffer = std::make_unique<uint8_t[]>(length);
+  auto scaled = window->rectangle.size() * scale;
+
+  window->cairo_surface = std::shared_ptr<conky::draw_surface>(
+      cairo_image_surface_create_for_data(window->private_buffer.get(),
+                                          CAIRO_FORMAT_ARGB32, scaled.x(),
+                                          scaled.y(), stride),
+      [](auto it) {
+        if (it) cairo_surface_destroy(it);
+      });
+
+  cairo_surface_set_device_scale(window->cairo_surface.get(), scale, scale);
+
+  window->cr = std::shared_ptr<cairo_t>(
+      cairo_create(window->cairo_surface.get()), [](auto it) {
+        if (it) cairo_destroy(it);
+      });
+  window->layout = pango_cairo_create_layout(window->cr.get());
+  window->pango_context = pango_cairo_create_context(window->cr.get());
 }
 
 struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
@@ -1234,7 +1266,7 @@ struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
 
   window->surface = surface;
   window->shm = shm;
-
+  for (int i = 0; i < 2; i++) { window->shm_surface[i] = nullptr; }
   window->cairo_surface = nullptr;
   window->cr = nullptr;
   window->layout = nullptr;
@@ -1244,12 +1276,21 @@ struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
 }
 
 void window_free_buffer(struct window *window) {
+  for (int i = 0; i < 2; ++i) {
+    if (!window->shm_surface[i]) continue;
+    auto *data =
+        static_cast<struct shm_surface_data *>(cairo_surface_get_user_data(
+            window->shm_surface[i].get(), &shm_surface_data_key));
+    while (data && data->busy) { wl_display_dispatch(global_display); }
+  }
+  for (int i = 0; i < 2; ++i) { window->shm_surface[i] = nullptr; }
   window->cr = nullptr;
   window->cairo_surface = nullptr;
-  g_object_unref(window->layout);
-  g_object_unref(window->pango_context);
+  if (window->layout) g_object_unref(window->layout);
+  if (window->pango_context) g_object_unref(window->pango_context);
   window->layout = nullptr;
   window->pango_context = nullptr;
+  window->private_buffer.reset();
 }
 
 void window_destroy(struct window *window) {
@@ -1271,18 +1312,36 @@ void window_resize(struct window *window, int width, int height) {
 }
 
 void window_commit_buffer(struct window *window) {
-  assert(window->cairo_surface != nullptr);
+  assert(window->shm_surface[window->current_buffer] != nullptr);
+
+  cairo_surface_flush(window->cairo_surface.get());
+
+  int scale = window->pending_scale;
+  int length = data_length_for_shm_surface(&window->rectangle, scale);
+
+  auto shm_surf = window->shm_surface[window->current_buffer].get();
+  unsigned char *shm_data = cairo_image_surface_get_data(shm_surf);
+
+  std::memcpy(shm_data, window->private_buffer.get(), length);
+
   wl_surface_set_buffer_scale(global_window->surface,
                               global_window->pending_scale);
-  wl_surface_attach(window->surface,
-                    get_buffer_from_cairo_surface(window->cairo_surface.get()),
-                    0, 0);
+  wl_surface_attach(window->surface, get_buffer_from_cairo_surface(shm_surf), 0,
+                    0);
   /* repaint all the pixels in the surface, change size to only repaint changed
    * area*/
   wl_surface_damage(window->surface, window->rectangle.x(),
                     window->rectangle.y(), window->rectangle.width(),
                     window->rectangle.height());
   wl_surface_commit(window->surface);
+  struct shm_surface_data *data = static_cast<struct shm_surface_data *>(
+      cairo_surface_get_user_data(shm_surf, &shm_surface_data_key));
+  data->busy = true;
+  window->current_buffer = 1 - window->current_buffer;
+  auto next_surf = window->shm_surface[window->current_buffer].get();
+  struct shm_surface_data *next_data = static_cast<struct shm_surface_data *>(
+      cairo_surface_get_user_data(next_surf, &shm_surface_data_key));
+  while (next_data->busy) { wl_display_dispatch(global_display); }
 }
 
 void window_get_width_height(struct window *window, int *w, int *h) {
