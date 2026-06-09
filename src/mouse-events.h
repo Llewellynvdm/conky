@@ -23,6 +23,7 @@
 
 #include <bitset>
 #include <cstdint>
+#include <cstring>
 #include <optional>
 #include <string>
 
@@ -252,14 +253,39 @@ struct mouse_crossing_event : public mouse_positioned_event {
 #endif /* BUILD_MOUSE_EVENTS */
 
 #ifdef BUILD_X11
-typedef int xi_device_id;
-typedef int xi_event_type;
+using xi_device_id = int;
+using xi_event_type = int;
 
 enum class valuator_t : size_t { MOVE_X, MOVE_Y, SCROLL_X, SCROLL_Y, UNKNOWN };
 const size_t VALUATOR_COUNT = static_cast<size_t>(valuator_t::UNKNOWN);
 constexpr uint8_t operator*(valuator_t index) {
   return static_cast<uint8_t>(index);
 }
+
+class xi_event_bitflags {
+  std::array<unsigned char, (XI_LASTEVENT + 7) / 8> data = {0};
+
+ public:
+  constexpr void set(xi_event_type event) {
+    data[(event) >> 3] |= (1 << ((event) & 7));
+  }
+  constexpr void clear(xi_event_type event) {
+    data[(event) >> 3] &= ~(1 << ((event) & 7));
+  }
+  void clear_all() { std::memset(data.data(), 0, data.size()); }
+  constexpr bool test(xi_event_type event) const {
+    return static_cast<bool>(data[(event) >> 3] & (1 << ((event) & 7)));
+  }
+  constexpr size_t size() const { return data.size(); }
+
+  XIEventMask mask(xi_device_id device) const {
+    return XIEventMask{
+        device,
+        static_cast<int>(data.size()),
+        const_cast<unsigned char *>(data.data()),
+    };
+  }
+};
 
 struct conky_valuator_info {
   size_t index = SIZE_MAX;

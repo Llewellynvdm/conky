@@ -492,29 +492,6 @@ bool handle_event<x_event_handler::MOUSE_INPUT>(
                  "xi event: type={} inside_geom={} over_conky={}", data->evtype,
                  inside_geometry, cursor_over_conky);
 
-  // XInput reports events twice on some hardware (even by 'xinput --test-xi2')
-  auto hash = std::make_tuple(data->serial, data->evtype, data->event);
-  typedef std::map<decltype(hash), Time> MouseEventDebounceMap;
-  static MouseEventDebounceMap debounce{};
-
-  Time now = data->time;
-  bool already_handled = debounce.count(hash) > 0;
-  debounce[hash] = now;
-
-  // clear stale entries
-  for (auto iter = debounce.begin(); iter != debounce.end();) {
-    if (data->time - iter->second > 1000) {
-      iter = debounce.erase(iter);
-    } else {
-      ++iter;
-    }
-  }
-
-  if (already_handled) {
-    *consumed = true;
-    return true;
-  }
-
 #ifdef BUILD_MOUSE_EVENTS
   // query_result is not window.window in some cases.
   modifier_state_t mods = x11_modifier_state(data->mods.effective);

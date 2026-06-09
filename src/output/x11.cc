@@ -34,6 +34,7 @@
 
 #include <X11/X.h>
 #include <X11/Xlibint.h>
+#include <X11/extensions/XI2.h>
 #undef min
 #undef max
 #include <sys/types.h>
@@ -844,32 +845,26 @@ void x11_init_window(lua::state &l, bool own) {
       break;
     }
 
-    const std::size_t mask_size = (XI_LASTEVENT + 7) / 8;
-    unsigned char mask_bytes[mask_size] = {0}; /* must be zeroed! */
-    XISetMask(mask_bytes, XI_HierarchyChanged);
+    conky::xi_event_bitflags selected_events;
+    selected_events.set(XI_HierarchyChanged);
+    XIEventMask mask = selected_events.mask(XIAllDevices);
+    XISelectEvents(display, window.root, &mask, 1);
 #ifdef BUILD_MOUSE_EVENTS
-    XISetMask(mask_bytes, XI_Motion);
-    XISetMask(mask_bytes, XI_ButtonPress);
-    XISetMask(mask_bytes, XI_ButtonRelease);
-#endif /* BUILD_MOUSE_EVENTS */
-
-    XIEventMask ev_masks[1];
-    ev_masks[0].deviceid = XIAllDevices;
-    ev_masks[0].mask_len = sizeof(mask_bytes);
-    ev_masks[0].mask = mask_bytes;
-    XISelectEvents(display, window.root, ev_masks, 1);
+    selected_events.clear(XI_HierarchyChanged);
+    
+    selected_events.set(XI_Motion);
+    selected_events.set(XI_ButtonPress);
+    selected_events.set(XI_ButtonRelease);
+    mask = selected_events.mask(XIAllMasterDevices);
+    XISelectEvents(display, window.root, &mask, 1);
+#endif
 
     if (own) {
-#ifdef BUILD_MOUSE_EVENTS
-      XIClearMask(mask_bytes, XI_Motion);
-#endif /* BUILD_MOUSE_EVENTS */
-      XISetMask(mask_bytes, XI_ButtonPress);
-      XISetMask(mask_bytes, XI_ButtonRelease);
-
-      ev_masks[0].deviceid = XIAllDevices;
-      ev_masks[0].mask_len = sizeof(mask_bytes);
-      ev_masks[0].mask = mask_bytes;
-      XISelectEvents(display, window.window, ev_masks, 1);
+      selected_events.clear_all();
+      selected_events.set(XI_ButtonPress);
+      selected_events.set(XI_ButtonRelease);
+      mask = selected_events.mask(XIAllMasterDevices);
+      XISelectEvents(display, window.window, &mask, 1);
     }
 
     // setup cache
