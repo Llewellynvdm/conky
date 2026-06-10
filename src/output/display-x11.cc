@@ -493,6 +493,9 @@ bool handle_event<x_event_handler::MOUSE_INPUT>(
                  inside_geometry, cursor_over_conky);
 
 #ifdef BUILD_MOUSE_EVENTS
+  // Events not over conky should always propagate to underlying windows.
+  if (!cursor_over_conky) { *consumed = false; }
+
   // query_result is not window.window in some cases.
   modifier_state_t mods = x11_modifier_state(data->mods.effective);
 
@@ -599,14 +602,8 @@ bool handle_event<x_event_handler::MOUSE_INPUT>(
     *consumed = llua_mouse_hook(mouse_button_event(
         type, data->pos, data->pos_absolute, button.value(), mods));
   }
-  // Events not over conky are received via passive XISelectEvents on the root
-  // window; the X server already delivers them to their targets, so
-  // re-propagating via XSendEvent would create duplicates.
-  if (!cursor_over_conky) { *consumed = true; }
-#else  /* !BUILD_MOUSE_EVENTS */
-  // Events over conky were intercepted by our window; propagate since we have
-  // no handler. Events elsewhere are already delivered by the X server.
-  if (cursor_over_conky) { *consumed = false; }
+#else /* !BUILD_MOUSE_EVENTS */
+  *consumed = false;
 #endif /* BUILD_MOUSE_EVENTS */
 
   LOG_TRACE("xi event pre-window-type: consumed={}", *consumed);
