@@ -851,14 +851,20 @@ void x11_init_window(lua::state &l, bool own) {
     XISelectEvents(display, window.root, &mask, 1);
 #ifdef BUILD_MOUSE_EVENTS
     selected_events.clear(XI_HierarchyChanged);
-    
-    selected_events.set(XI_Motion);
-    if (!own) {
+
+    if (!own && !conky::lua_mouse_hook.get(l).empty()) {
+      LOG_WARNING(
+          "registering `lua_mouse_hook` when `own_window = false` means conky "
+          "has to steal root events; WM desktop interactivity will likely seem "
+          "broken!");
+
+      selected_events.set(XI_Motion);
       selected_events.set(XI_ButtonPress);
       selected_events.set(XI_ButtonRelease);
+
+      mask = selected_events.mask(XIAllMasterDevices);
+      XISelectEvents(display, window.root, &mask, 1);
     }
-    mask = selected_events.mask(XIAllMasterDevices);
-    XISelectEvents(display, window.root, &mask, 1);
 #endif
 
     if (own) {

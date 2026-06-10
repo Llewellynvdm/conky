@@ -31,6 +31,7 @@
 
 #include "geometry.h"
 #include "logging.h"
+#include "lua/setting.hh"
 
 #ifdef BUILD_X11
 #include <array>
@@ -359,6 +360,11 @@ struct xi_event_data {
 };
 
 #endif /* BUILD_X11 */
+
+#ifdef BUILD_MOUSE_EVENTS
+extern simple_config_setting<std::string> lua_mouse_hook;
+#endif
+
 }  // namespace conky
 
 #endif /* MOUSE_EVENTS_H */

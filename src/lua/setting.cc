@@ -114,6 +114,7 @@ const std::vector<std::string> settings_ordering{
     "border_width",
     "alignment",
     "xinerama_head",
+    "lua_mouse_hook",
     "own_window_transparent",
     "own_window_class",
     "own_window_title",

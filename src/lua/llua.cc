@@ -137,11 +137,6 @@ conky::simple_config_setting<std::string> lua_draw_hook_pre("lua_draw_hook_pre",
 conky::simple_config_setting<std::string> lua_draw_hook_post(
     "lua_draw_hook_post", std::string(), true);
 
-#ifdef BUILD_MOUSE_EVENTS
-conky::simple_config_setting<std::string> lua_mouse_hook("lua_mouse_hook",
-                                                         std::string(), true);
-#endif /* BUILD_MOUSE_EVENTS */
-
 #endif
 }  // namespace
 
@@ -624,8 +619,8 @@ void llua_draw_post_hook() {
 #ifdef BUILD_MOUSE_EVENTS
 template <typename EventT>
 bool llua_mouse_hook(const EventT &ev) {
-  if (lua_mouse_hook.get(*state).empty()) { return false; }
-  const std::string raw_hook_name = lua_mouse_hook.get(*state);
+  if (conky::lua_mouse_hook.get(*state).empty()) { return false; }
+  const std::string raw_hook_name = conky::lua_mouse_hook.get(*state);
   std::string hook_name;
   if (raw_hook_name.rfind("conky_", 0) == 0) {
     hook_name = raw_hook_name;

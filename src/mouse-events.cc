@@ -26,6 +26,7 @@
 #include <type_traits>
 
 #include "logging.h"
+#include "lua/setting.hh"
 
 #include <cstring>
 
@@ -708,5 +709,10 @@ std::vector<std::tuple<int, XEvent *>> xi_event_data::generate_events(
   return result;
 }
 #endif /* BUILD_X11 */
+
+#ifdef BUILD_MOUSE_EVENTS
+simple_config_setting<std::string> lua_mouse_hook("lua_mouse_hook",
+                                                         std::string(), true);
+#endif
 
 }  // namespace conky
