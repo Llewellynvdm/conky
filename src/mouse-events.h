@@ -21,6 +21,7 @@
 #ifndef MOUSE_EVENTS_H
 #define MOUSE_EVENTS_H
 
+#include <X11/Xlib.h>
 #include <bitset>
 #include <cstdint>
 #include <cstring>
@@ -255,6 +256,9 @@ struct mouse_crossing_event : public mouse_positioned_event {
 
 #ifdef BUILD_X11
 using xi_device_id = int;
+/// XInput2 event type
+///
+/// e.g. `XI_KeyPress`
 using xi_event_type = int;
 
 enum class valuator_t : size_t { MOVE_X, MOVE_Y, SCROLL_X, SCROLL_Y, UNKNOWN };
@@ -317,27 +321,65 @@ struct device_info {
 
 void handle_xi_device_change(const XIHierarchyEvent *event);
 
-/// Almost an exact copy of `XIDeviceEvent`, except it owns all data.
-struct xi_event_data {
+/// `XIEvent` header, removed constant data.
+struct xi_event_base {
+  /// XI2 event type
+  ///
+  /// e.g. `XI_KeyPress`
   xi_event_type evtype;
+  /// Serial number of last request processed by server
   unsigned long serial;
+  /// True if the event came from a `SendEvent` request.
   Bool send_event;
+  /// Display the event was read from
   Display *display;
   /// XI extension offset
-  // TODO: Check whether this is consistent between different clients by
-  // printing.
   int extension;
+  /// X server timestamp of the event
   Time time;
+
+  virtual bool read_from_cookie(Display *display, const void *data);
+
+  virtual std::vector<std::tuple<int, XEvent *>> generate_events(
+      Window target, Window child, conky::vec2d target_pos) const {
+    return std::vector<std::tuple<int, XEvent *>>();
+  }
+};
+
+#define GENERATES_EVENTS                                  \
+  std::vector<std::tuple<int, XEvent *>> generate_events( \
+      Window target, Window child, conky::vec2d target_pos) const override;
+
+struct xi_pointer_event : public xi_event_base {
   device_info *device;
   int sourceid;
   int detail;
+  /// Root window owning the `event` and `child` windows.
   Window root;
+  /// Window that registered the event listener.
   Window event;
+  /// Direct descendant of `event` whoose child (or itself) got the event.
+  ///
+  /// This is not the "final" child that actually got the event, just the
+  /// direct descendant of `event`.
+  ///
+  /// You need `XQueryPointer` to get the actual leaf window that recieved
+  /// the event. `child` is sufficient in most cases though.
+  ///
+  /// When `child == event`, the value is `None`.
   Window child;
+  /// `display` relative event coordinates
   conky::vec2d pos_absolute;
+  /// `event` window relative event coordinates
   conky::vec2d pos;
+
+  virtual bool read_from_cookie(Display *display, const void *data) override;
+};
+
+/// Almost an exact copy of `XIDeviceEvent`, except it owns all data.
+struct xi_pointer_interact_event : public xi_pointer_event {
   int flags;
-  /// pressed button mask
+  /// Pressed button mask
   std::bitset<32> buttons;
   std::map<size_t, double> valuators;
   XIModifierState mods;
@@ -346,18 +388,48 @@ struct xi_event_data {
   // Extra data
 
   /// Precomputed relative values
-  std::array<double, VALUATOR_COUNT> valuators_relative;
+  std::array<double, VALUATOR_COUNT> valuators_relative{};
 
-  static xi_event_data *read_cookie(Display *display, const void *data);
+  bool read_from_cookie(Display *display, const void *data) override;
 
   bool test_valuator(valuator_t id) const;
   conky_valuator_info *valuator_info(valuator_t id) const;
   std::optional<double> valuator_value(valuator_t id) const;
   std::optional<double> valuator_relative_value(valuator_t valuator) const;
-
-  std::vector<std::tuple<int, XEvent *>> generate_events(
-      Window target, Window child, conky::vec2d target_pos) const;
 };
+
+struct xi_pointer_move final : public xi_pointer_interact_event {
+  GENERATES_EVENTS
+};
+struct xi_pointer_press final : public xi_pointer_interact_event {
+  GENERATES_EVENTS
+};
+struct xi_pointer_release final : public xi_pointer_interact_event {
+  GENERATES_EVENTS
+};
+
+/// Almost an exact copy of `XIEnterEvent`, except it owns all data.
+struct xi_pointer_crossing_event : public xi_pointer_event {
+  int mode;
+  Bool focus;
+  Bool same_screen;
+  /// Pressed button mask
+  std::bitset<32> buttons;
+  XIModifierState mods;
+  XIGroupState group;
+
+  bool read_from_cookie(Display *display, const void *data) override;
+};
+
+// Crossing/focus events are sink-only: they're never propagated, so they
+// inherit `xi_event_base::generate_events` (which yields nothing) instead of
+// overriding it.
+struct xi_pointer_enter final : public xi_pointer_crossing_event {};
+struct xi_pointer_leave final : public xi_pointer_crossing_event {};
+struct xi_pointer_focus_in final : public xi_pointer_crossing_event {};
+struct xi_pointer_focus_out final : public xi_pointer_crossing_event {};
+
+#undef GENERATES_EVENTS
 
 #endif /* BUILD_X11 */
 

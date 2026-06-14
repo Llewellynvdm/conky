@@ -26,10 +26,13 @@
 
 #include "config.h"
 #include "display-output.hh"
+#include "x11-event.h"
 
 #include "display-x11.hh"
 
 #include <X11/X.h>
+#include <functional>
+#include <memory>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvariadic-macros"
 #include <X11/Xutil.h>
@@ -57,8 +60,8 @@
 #include <iostream>
 #include <map>
 #include <sstream>
-#include <tuple>
 #include <unordered_map>
+#include <variant>
 #include <vector>
 
 #include "../conky.h"
@@ -141,15 +144,6 @@ xftalpha_setting xftalpha;
 
 static void X11_create_window();
 
-struct _x11_stuff_s {
-  Region region;
-#ifdef BUILD_XDAMAGE
-  Damage damage;
-  XserverRegion region2, part;
-  int event_base, error_base;
-#endif
-} x11_stuff;
-
 void update_dpi() {
   // Add XRandR support if used
   // See dunst PR: https://github.com/dunst-project/dunst/pull/608
@@ -197,17 +191,19 @@ static void X11_create_window() {
 
   draw_stuff();
 
-  x11_stuff.region = XCreateRegion();
+  window.repaint_region = XCreateRegion();
 #ifdef BUILD_XDAMAGE
-  if (XDamageQueryExtension(display, &x11_stuff.event_base,
-                            &x11_stuff.error_base) == 0) {
+  if (XDamageQueryExtension(display, &window.xdamage_event_base,
+                            &window.xdamage_error_base) == 0) {
     LOG_WARNING("XDamage extension unavailable");
-    x11_stuff.damage = 0;
+    window.window_damage = 0;
   } else {
-    x11_stuff.damage =
+    window.window_damage =
         XDamageCreate(display, window.window, XDamageReportNonEmpty);
-    x11_stuff.region2 = XFixesCreateRegionFromWindow(display, window.window, 0);
-    x11_stuff.part = XFixesCreateRegionFromWindow(display, window.window, 0);
+    window.damage_region =
+        XFixesCreateRegionFromWindow(display, window.window, 0);
+    window.damage_scratch =
+        XFixesCreateRegionFromWindow(display, window.window, 0);
   }
 #endif /* BUILD_XDAMAGE */
 
@@ -370,16 +366,16 @@ bool display_output_x11::main_loop_wait(double t) {
       XRectangle rect = conky::rect<int>(text_start - border_total,
                                          text_size + border_total * 2)
                             .to_xrectangle();
-      XUnionRectWithRegion(&rect, x11_stuff.region, x11_stuff.region);
+      XUnionRectWithRegion(&rect, window.repaint_region, window.repaint_region);
     }
   }
 
   process_surface_events(this, display);
 
 #ifdef BUILD_XDAMAGE
-  if (x11_stuff.damage) {
-    XDamageSubtract(display, x11_stuff.damage, x11_stuff.region2, None);
-    XFixesSetRegion(display, x11_stuff.region2, nullptr, 0);
+  if (window.window_damage) {
+    XDamageSubtract(display, window.window_damage, window.damage_region, None);
+    XFixesSetRegion(display, window.damage_region, nullptr, 0);
   }
 #endif /* BUILD_XDAMAGE */
 
@@ -390,7 +386,7 @@ bool display_output_x11::main_loop_wait(double t) {
    * the exposed area. OTOH, if we're not going to call draw_stuff at
    * all, then no swap happens and we can safely do nothing. */
 
-  if (XEmptyRegion(x11_stuff.region) == 0) {
+  if (XEmptyRegion(window.repaint_region) == 0) {
 #if defined(BUILD_XDBE)
     if (use_xdbe.get(*state)) {
 #else
@@ -399,17 +395,17 @@ bool display_output_x11::main_loop_wait(double t) {
       XRectangle rect = conky::rect<int>(text_start - border_total,
                                          text_size + border_total * 2)
                             .to_xrectangle();
-      XUnionRectWithRegion(&rect, x11_stuff.region, x11_stuff.region);
+      XUnionRectWithRegion(&rect, window.repaint_region, window.repaint_region);
     }
-    XSetRegion(display, window.gc, x11_stuff.region);
+    XSetRegion(display, window.gc, window.repaint_region);
 #ifdef BUILD_XFT
     if (use_xft.get(*state)) {
-      XftDrawSetClip(window.xftdraw, x11_stuff.region);
+      XftDrawSetClip(window.xftdraw, window.repaint_region);
     }
 #endif
     draw_stuff();
-    XDestroyRegion(x11_stuff.region);
-    x11_stuff.region = XCreateRegion();
+    XDestroyRegion(window.repaint_region);
+    window.repaint_region = XCreateRegion();
   }
 
   // handled
@@ -419,237 +415,201 @@ bool display_output_x11::main_loop_wait(double t) {
 /// Cached top-level parent of conky's window; invalidated on ReparentNotify.
 static Window window_top_parent = None;
 
-enum class x_event_handler {
-  XINPUT_MOTION,
-  MOUSE_INPUT,
-  PROPERTY_NOTIFY,
-  EXPOSE,
-  REPARENT,
-  CONFIGURE,
-  DAMAGE,
-};
+#ifdef OWN_WINDOW
 
-template <x_event_handler handler>
+#ifdef BUILD_MOUSE_EVENTS
 bool handle_event(conky::display_output_x11 *surface, Display *display,
-                  XEvent &ev, bool *consumed, void **cookie) {
-  return false;
+                  xi_pointer_enter ev, conky::x11::event *propagated) {
+  llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_ENTER,
+                                       ev.pos_absolute - window.geometry.pos(),
+                                       ev.pos_absolute));
+  return true;
 }
 
-#ifdef OWN_WINDOW
-template <>
-bool handle_event<x_event_handler::MOUSE_INPUT>(
-    conky::display_output_x11 *surface, Display *display, XEvent &ev,
-    bool *consumed, void **cookie) {
-  if (ev.type == ButtonPress || ev.type == ButtonRelease ||
-      ev.type == MotionNotify) {
-    // Consume basic X11 input events; XInput2 handles these and synthesizes
-    // legacy events for propagation when needed.
-    *consumed = true;
-    return true;
-  }
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_leave ev, conky::x11::event *propagated) {
+  llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_LEAVE,
+                                       ev.pos_absolute - window.geometry.pos(),
+                                       ev.pos_absolute));
+  return true;
+}
+#endif /* BUILD_MOUSE_EVENTS */
 
-  if (ev.type != GenericEvent || ev.xgeneric.extension != window.xi_opcode)
-    return false;
-
-  if (!XGetEventData(display, &ev.xcookie)) {
-    // already consumed
-    return true;
-  }
-  xi_event_type event_type = ev.xcookie.evtype;
-
-  if (event_type == XI_HierarchyChanged) {
-    auto device_change = reinterpret_cast<XIHierarchyEvent *>(ev.xcookie.data);
-    handle_xi_device_change(device_change);
-    XFreeEventData(display, &ev.xcookie);
-    return true;
-  }
-
-  auto *data = xi_event_data::read_cookie(display, ev.xcookie.data);
-  XFreeEventData(display, &ev.xcookie);
-  if (data == nullptr) {
-    // we ate the cookie, Xi event not handled
-    return true;
-  }
-  *cookie = data;
+static bool test_event_cursor_over_conky(xi_pointer_event &ev) {
+  if (own_window.get(*state)) { return true; }
 
   // Fast reject: if cursor is outside our geometry, it's definitely not over
   // this conky instance.  This avoids expensive X11 round-trips
   // (XIQueryPointer + XQueryTree) for the vast majority of events when
   // multiple conky instances are running.  See #1886.
-  bool inside_geometry = window.geometry.contains(data->pos_absolute);
-  bool cursor_over_conky = false;
-  if (inside_geometry) {
-    Window event_window = query_x11_window_at_pos(display, data->pos_absolute,
-                                                  data->device->master);
-    if (window_top_parent == None) {
-      window_top_parent = query_x11_top_parent(display, window.window);
-    }
-    bool same_window =
-        query_x11_top_parent(display, event_window) == window_top_parent;
-    cursor_over_conky = same_window;
+
+  // Conky only listens for its own window events when `own_window` is set,
+  // so this check isn't needed in the most common case.
+
+  bool inside_geometry = window.geometry.contains(ev.pos_absolute);
+  if (!inside_geometry) { return false; }
+
+  // AABB test passes, but there could still be a window covering conky
+
+  Window event_window =
+      query_x11_window_at_pos(display, ev.pos_absolute, ev.device->master);
+  if (window_top_parent == None) {
+    window_top_parent = query_x11_top_parent(display, window.window);
   }
-  LOG_TRACE_WITH(({"pos", data->pos_absolute}, {"geom", window.geometry}),
-                 "xi event: type={} inside_geom={} over_conky={}", data->evtype,
-                 inside_geometry, cursor_over_conky);
+  bool same_window =
+      query_x11_top_parent(display, event_window) == window_top_parent;
+
+  LOG_TRACE_WITH(({"pos", ev.pos_absolute}, {"geom", window.geometry}),
+                 "xi event: type={} inside_geom={} over_conky={}", ev.evtype,
+                 inside_geometry, same_window);
+  return same_window;
+}
+
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_move ev, conky::x11::event *propagated) {
+  bool lua_consumed = false;
+  if (!test_event_cursor_over_conky(ev)) { return true; }
 
 #ifdef BUILD_MOUSE_EVENTS
-  // Events not over conky should always propagate to underlying windows.
-  if (!cursor_over_conky) { *consumed = false; }
+  modifier_state_t mods = x11_modifier_state(ev.mods.effective);
+  
+  bool has_move_x = ev.test_valuator(valuator_t::MOVE_X);
+  bool has_move_y = ev.test_valuator(valuator_t::MOVE_Y);
+  bool has_scroll_x = ev.test_valuator(valuator_t::SCROLL_X);
+  bool has_scroll_y = ev.test_valuator(valuator_t::SCROLL_Y);
+  bool is_move = has_move_x || has_move_y;
+  bool is_scroll = has_scroll_x || has_scroll_y;
+  LOG_TRACE_WITH(({"move_x", has_move_x}, {"move_y", has_move_y},
+                  {"scroll_x", has_scroll_x}, {"scroll_y", has_scroll_y}),
+                 "xi motion: is_move={} is_scroll={}", is_move, is_scroll);
 
-  // query_result is not window.window in some cases.
-  modifier_state_t mods = x11_modifier_state(data->mods.effective);
-
-  if (data->evtype == XI_Motion) {
-    // TODO: Make valuator_index names configurable?
-
-    bool has_move_x = data->test_valuator(valuator_t::MOVE_X);
-    bool has_move_y = data->test_valuator(valuator_t::MOVE_Y);
-    bool has_scroll_x = data->test_valuator(valuator_t::SCROLL_X);
-    bool has_scroll_y = data->test_valuator(valuator_t::SCROLL_Y);
-    bool is_move = has_move_x || has_move_y;
-    bool is_scroll = has_scroll_x || has_scroll_y;
-    LOG_TRACE_WITH(({"move_x", has_move_x}, {"move_y", has_move_y},
-                    {"scroll_x", has_scroll_x}, {"scroll_y", has_scroll_y}),
-                   "xi motion: is_move={} is_scroll={}", is_move, is_scroll);
-
-    if (is_move) {
-      static bool cursor_inside = false;
-
-      // generate crossing events
-      if (cursor_over_conky) {
-        if (!cursor_inside) {
-          *consumed = llua_mouse_hook(mouse_crossing_event(
-              mouse_event_t::AREA_ENTER,
-              data->pos_absolute - window.geometry.pos(), data->pos_absolute));
-        }
-        cursor_inside = true;
-      } else if (cursor_inside) {
-        *consumed = llua_mouse_hook(mouse_crossing_event(
-            mouse_event_t::AREA_LEAVE,
-            data->pos_absolute - window.geometry.pos(), data->pos_absolute));
-        cursor_inside = false;
-      }
-
-      // generate movement events
-      if (cursor_over_conky) {
-        auto window_pos = data->pos_absolute - window.geometry.pos();
-        *consumed = llua_mouse_hook(
-            mouse_move_event(window_pos, data->pos_absolute, mods));
-      }
-    }
-    if (is_scroll && cursor_over_conky) {
-      scroll_direction_t scroll_direction = scroll_direction_t::UNKNOWN;
-      auto vertical = data->valuator_relative_value(valuator_t::SCROLL_Y);
-      double vertical_value = vertical.value_or(0.0);
-
-      if (vertical_value != 0.0) {
-        auto *info = data->valuator_info(valuator_t::SCROLL_Y);
-        double increment = (info != nullptr) ? info->increment : 1.0;
-        scroll_direction = (vertical_value * increment) < 0.0
-                               ? scroll_direction_t::UP
-                               : scroll_direction_t::DOWN;
-        LOG_TRACE_WITH(
-            ({"vertical", vertical_value}, {"increment", increment},
-             {"product", vertical_value * increment}),
-            "xi scroll dir={}",
-            scroll_direction == scroll_direction_t::UP ? "UP" : "DOWN");
-      } else {
-        auto horizontal = data->valuator_relative_value(valuator_t::SCROLL_X);
-        double horizontal_value = horizontal.value_or(0.0);
-        if (horizontal_value != 0.0) {
-          auto *info = data->valuator_info(valuator_t::SCROLL_X);
-          double increment = (info != nullptr) ? info->increment : 1.0;
-          scroll_direction = (horizontal_value * increment) < 0.0
-                                 ? scroll_direction_t::LEFT
-                                 : scroll_direction_t::RIGHT;
-        }
-      }
-
-      if (scroll_direction != scroll_direction_t::UNKNOWN) {
-        auto window_pos = data->pos_absolute - window.geometry.pos();
-        *consumed = llua_mouse_hook(mouse_scroll_event(
-            window_pos, data->pos_absolute, scroll_direction, mods));
-      }
-    }
-  } else if (cursor_over_conky && (data->evtype == XI_ButtonPress ||
-                                   data->evtype == XI_ButtonRelease)) {
-    LOG_TRACE("xi button: detail={} type={}", data->detail,
-              data->evtype == XI_ButtonPress ? "press" : "release");
-    if (data->detail >= 4 && data->detail <= 7) {
-      // Fallback: use button 4-7 as scroll if this device has no independent
-      // scroll valuators (e.g. Xephyr aliases scroll and move axes).
-      // Devices with working scroll valuators handle scroll via XI_Motion.
-      bool has_scroll_valuators =
-          data->device->valuator(valuator_t::SCROLL_X).index != SIZE_MAX ||
-          data->device->valuator(valuator_t::SCROLL_Y).index != SIZE_MAX;
-      LOG_TRACE("xi button 4-7 fallback: has_scroll_valuators={}",
-                has_scroll_valuators);
-      if (!has_scroll_valuators && data->evtype == XI_ButtonPress) {
-        scroll_direction_t direction = x11_scroll_direction(data->detail);
-        auto window_pos = data->pos_absolute - window.geometry.pos();
-        *consumed = llua_mouse_hook(mouse_scroll_event(
-            window_pos, data->pos_absolute, direction, mods));
-      }
-      return true;
-    }
-
-    auto button = x11_mouse_button_code(data->detail);
-    if (!button.has_value()) return true;
-
-    mouse_event_t type = mouse_event_t::PRESS;
-    if (data->evtype == XI_ButtonRelease) { type = mouse_event_t::RELEASE; }
-
-    *consumed = llua_mouse_hook(mouse_button_event(
-        type, data->pos, data->pos_absolute, button.value(), mods));
+  if (is_move) {
+    auto window_pos = ev.pos_absolute - window.geometry.pos();
+    lua_consumed =
+        llua_mouse_hook(mouse_move_event(window_pos, ev.pos_absolute, mods));
   }
-#else /* !BUILD_MOUSE_EVENTS */
-  *consumed = false;
+  if (is_scroll) {
+    scroll_direction_t scroll_direction = scroll_direction_t::UNKNOWN;
+    auto vertical = ev.valuator_relative_value(valuator_t::SCROLL_Y);
+    double vertical_value = vertical.value_or(0.0);
+
+    if (vertical_value != 0.0) {
+      auto *info = ev.valuator_info(valuator_t::SCROLL_Y);
+      double increment = (info != nullptr) ? info->increment : 1.0;
+      scroll_direction = (vertical_value * increment) < 0.0
+                             ? scroll_direction_t::UP
+                             : scroll_direction_t::DOWN;
+      LOG_TRACE_WITH(
+          ({"vertical", vertical_value}, {"increment", increment},
+           {"product", vertical_value * increment}),
+          "xi scroll dir={}",
+          scroll_direction == scroll_direction_t::UP ? "UP" : "DOWN");
+    } else {
+      auto horizontal = ev.valuator_relative_value(valuator_t::SCROLL_X);
+      double horizontal_value = horizontal.value_or(0.0);
+      if (horizontal_value != 0.0) {
+        auto *info = ev.valuator_info(valuator_t::SCROLL_X);
+        double increment = (info != nullptr) ? info->increment : 1.0;
+        scroll_direction = (horizontal_value * increment) < 0.0
+                               ? scroll_direction_t::LEFT
+                               : scroll_direction_t::RIGHT;
+      }
+    }
+
+    if (scroll_direction != scroll_direction_t::UNKNOWN) {
+      auto window_pos = ev.pos_absolute - window.geometry.pos();
+      lua_consumed = llua_mouse_hook(mouse_scroll_event(
+          window_pos, ev.pos_absolute, scroll_direction, mods));
+    }
+  }
 #endif /* BUILD_MOUSE_EVENTS */
 
-  LOG_TRACE("xi event pre-window-type: consumed={}", *consumed);
-  if (!own_window.get(*state)) return true;
-  if (cursor_over_conky) {
-    switch (own_window_type.get(*state)) {
-      case window_type::NORMAL:
-      case window_type::UTILITY:
-        // decorated normal windows always consume events
-        if (!TEST_HINT(own_window_hints.get(*state),
-                       window_hints::UNDECORATED)) {
-          *consumed = true;
-        }
-        break;
-      case window_type::DESKTOP:
-        // assume conky is always on bottom; nothing to propagate events to
-        *consumed = true;
-      default:
-        break;
-    }
-  }
-
-  LOG_TRACE("xi event final: consumed={}", *consumed);
+  if (!lua_consumed) { *propagated = std::move(ev); }
   return true;
 }
 
-template <>
-bool handle_event<x_event_handler::REPARENT>(conky::display_output_x11 *surface,
-                                             Display *display, XEvent &ev,
-                                             bool *consumed, void **cookie) {
-  if (ev.type != ReparentNotify) return false;
+#ifdef BUILD_MOUSE_EVENTS
+static void handle_press_release_events(xi_pointer_interact_event &ev,
+                                        bool *consumed) {
+  modifier_state_t mods = x11_modifier_state(ev.mods.effective);
 
+  LOG_TRACE("xi button: detail={} type={}", ev.detail,
+            ev.evtype == XI_ButtonPress ? "press" : "release");
+  if (ev.detail >= 4 && ev.detail <= 7) {
+    // Fallback: use button 4-7 as scroll if this device has no independent
+    // scroll valuators (e.g. Xephyr aliases scroll and move axes).
+    // Devices with working scroll valuators handle scroll via XI_Motion.
+    bool has_scroll_valuators =
+        ev.device->valuator(valuator_t::SCROLL_X).index != SIZE_MAX ||
+        ev.device->valuator(valuator_t::SCROLL_Y).index != SIZE_MAX;
+    LOG_TRACE("xi button 4-7 fallback: has_scroll_valuators={}",
+              has_scroll_valuators);
+    if (!has_scroll_valuators && ev.evtype == XI_ButtonPress) {
+      scroll_direction_t direction = x11_scroll_direction(ev.detail);
+      auto window_pos = ev.pos_absolute - window.geometry.pos();
+      *consumed = llua_mouse_hook(
+          mouse_scroll_event(window_pos, ev.pos_absolute, direction, mods));
+    }
+    return;
+  }
+
+  auto button = x11_mouse_button_code(ev.detail);
+  if (!button.has_value()) return;
+
+  mouse_event_t type = mouse_event_t::PRESS;
+  if (ev.evtype == XI_ButtonRelease) { type = mouse_event_t::RELEASE; }
+
+  *consumed = llua_mouse_hook(
+      mouse_button_event(type, ev.pos, ev.pos_absolute, button.value(), mods));
+
+  return;
+}
+#endif /* BUILD_MOUSE_EVENTS */
+
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_press ev, conky::x11::event *propagated) {
+  bool cursor_over_conky = test_event_cursor_over_conky(ev);
+  bool consumed = false;
+
+  if (!cursor_over_conky) { return true; }
+
+#ifdef BUILD_MOUSE_EVENTS
+  handle_press_release_events(ev, &consumed);
+#endif /* BUILD_MOUSE_EVENTS */
+
+  if (!consumed) { *propagated = std::move(ev); }
+  return true;
+}
+
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_release ev, conky::x11::event *propagated) {
+  bool cursor_over_conky = test_event_cursor_over_conky(ev);
+  bool lua_consumed = false;
+
+  if (!cursor_over_conky) { return true; }
+
+#ifdef BUILD_MOUSE_EVENTS
+  handle_press_release_events(ev, &lua_consumed);
+#endif /* BUILD_MOUSE_EVENTS */
+
+  if (!lua_consumed) { *propagated = std::move(ev); }
+  return true;
+}
+
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  XReparentEvent ev, conky::x11::event *propagated) {
   if (own_window.get(*state)) { set_transparent_background(&window); }
   // Invalidate cached top parent -- window tree changed.
   window_top_parent = None;
   return true;
 }
 
-template <>
-bool handle_event<x_event_handler::CONFIGURE>(
-    conky::display_output_x11 *surface, Display *display, XEvent &ev,
-    bool *consumed, void **cookie) {
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  XConfigureEvent ev, conky::x11::event *propagated) {
   if (ev.type != ConfigureNotify) return false;
 
   if (own_window.get(*state)) {
-    auto configure_size = vec2i(ev.xconfigure.width, ev.xconfigure.height);
+    auto configure_size = vec2i(ev.width, ev.height);
     /* if window size isn't what's expected, set fixed size */
     if (configure_size != window.geometry.size()) {
       if (window.geometry.size().surface() != 0) { fixed_size = 1; }
@@ -689,19 +649,15 @@ bool handle_event<x_event_handler::CONFIGURE>(
 }
 #endif /* OWN_WINDOW */
 
-template <>
-bool handle_event<x_event_handler::PROPERTY_NOTIFY>(
-    conky::display_output_x11 *surface, Display *display, XEvent &ev,
-    bool *consumed, void **cookie) {
-  if (ev.type != PropertyNotify) return false;
-
-  if (ev.xproperty.state == PropertyNewValue) {
-    get_x11_desktop_info(ev.xproperty.display, ev.xproperty.atom);
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  XPropertyEvent ev, conky::x11::event *propagated) {
+  if (ev.state == PropertyNewValue) {
+    get_x11_desktop_info(ev.display, ev.atom);
   }
 
-  if (ev.xproperty.atom == 0) return false;
+  if (ev.atom == 0) return false;
 
-  if (ev.xproperty.atom == XA_RESOURCE_MANAGER) {
+  if (ev.atom == XA_RESOURCE_MANAGER) {
     update_x11_resource_db();
     update_x11_workarea();
     screen_dpi = -1;
@@ -712,8 +668,7 @@ bool handle_event<x_event_handler::PROPERTY_NOTIFY>(
   if (window.opacity == 0xff) {
     Atom _XROOTPMAP_ID = XInternAtom(display, "_XROOTPMAP_ID", True);
     Atom _XROOTMAP_ID = XInternAtom(display, "_XROOTMAP_ID", True);
-    if (ev.xproperty.atom == _XROOTPMAP_ID ||
-        ev.xproperty.atom == _XROOTMAP_ID) {
+    if (ev.atom == _XROOTPMAP_ID || ev.atom == _XROOTMAP_ID) {
       if (forced_redraw.get(*state)) {
         draw_stuff();
         next_update_time = get_time();
@@ -726,35 +681,25 @@ bool handle_event<x_event_handler::PROPERTY_NOTIFY>(
   return false;
 }
 
-template <>
-bool handle_event<x_event_handler::EXPOSE>(conky::display_output_x11 *surface,
-                                           Display *display, XEvent &ev,
-                                           bool *consumed, void **cookie) {
-  if (ev.type != Expose) return false;
-
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  XExposeEvent ev, conky::x11::event *propagated) {
   XRectangle r{
-      .x = static_cast<short>(ev.xexpose.x),
-      .y = static_cast<short>(ev.xexpose.y),
-      .width = static_cast<unsigned short>(ev.xexpose.width),
-      .height = static_cast<unsigned short>(ev.xexpose.height),
+      .x = static_cast<short>(ev.x),
+      .y = static_cast<short>(ev.y),
+      .width = static_cast<unsigned short>(ev.width),
+      .height = static_cast<unsigned short>(ev.height),
   };
-  XUnionRectWithRegion(&r, x11_stuff.region, x11_stuff.region);
+  XUnionRectWithRegion(&r, window.repaint_region, window.repaint_region);
   XSync(display, False);
   return true;
 }
 
 #ifdef BUILD_XDAMAGE
-template <>
-bool handle_event<x_event_handler::DAMAGE>(conky::display_output_x11 *surface,
-                                           Display *display, XEvent &ev,
-                                           bool *consumed, void **cookie) {
-  if (ev.type != x11_stuff.event_base + XDamageNotify) return false;
-
-  auto *dev = reinterpret_cast<XDamageNotifyEvent *>(&ev);
-
-  XFixesSetRegion(display, x11_stuff.part, &dev->area, 1);
-  XFixesUnionRegion(display, x11_stuff.region2, x11_stuff.region2,
-                    x11_stuff.part);
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  XDamageNotifyEvent ev, conky::x11::event *propagated) {
+  XFixesSetRegion(display, window.damage_scratch, &ev.area, 1);
+  XFixesUnionRegion(display, window.damage_region, window.damage_region,
+                    window.damage_scratch);
   return true;
 }
 #endif /* BUILD_XDAMAGE */
@@ -762,29 +707,63 @@ bool handle_event<x_event_handler::DAMAGE>(conky::display_output_x11 *surface,
 /// Handles all events conky can receive.
 ///
 /// @return true if event should move input focus to conky
-bool process_event(conky::display_output_x11 *surface, Display *display,
-                   XEvent ev, bool *consumed, void **cookie) {
-#define HANDLE_EV(event)                                                   \
-  if (handle_event<x_event_handler::event>(surface, display, ev, consumed, \
-                                           cookie)) {                      \
-    return true;                                                           \
+inline bool process_event(conky::display_output_x11 *surface, Display *display,
+                          conky::x11::event &ev,
+                          conky::x11::event *propagated) {
+#define HANDLE_EV(type)                                                       \
+  if (auto it = ev.into_inner<type>()) {                                      \
+    return handle_event(surface, display, std::move(it.value()), propagated); \
   }
+  // order of handlers here does not matter because they're all mutually
+  // exclusive.
 
-  HANDLE_EV(XINPUT_MOTION)
-  HANDLE_EV(MOUSE_INPUT)
-  HANDLE_EV(PROPERTY_NOTIFY)
+  HANDLE_EV(XPropertyEvent);
+  HANDLE_EV(XExposeEvent);
 
-  // only accept remaining events if they're sent to Conky.
-  if (ev.xany.window != window.window) return false;
+#ifdef OWN_WINDOW
+  HANDLE_EV(xi_pointer_move);
+  HANDLE_EV(xi_pointer_press);
+  HANDLE_EV(xi_pointer_release);
+#ifdef BUILD_MOUSE_EVENTS
+  HANDLE_EV(xi_pointer_enter);
+  HANDLE_EV(xi_pointer_leave);
+#endif /* BUILD_MOUSE_EVENTS */
+  HANDLE_EV(XReparentEvent);
+  HANDLE_EV(XConfigureEvent);
+#endif /* OWN_WINDOW */
 
-  HANDLE_EV(EXPOSE)
-  HANDLE_EV(REPARENT)
-  HANDLE_EV(CONFIGURE)
-  HANDLE_EV(DAMAGE)
+#ifdef BUILD_XDAMAGE
+  HANDLE_EV(XDamageNotifyEvent);
+#endif /* BUILD_XDAMAGE */
 
 #undef HANDLE_EV
 
   // event not handled
+  return false;
+}
+
+/// A series of checks which check whether a window should be opaque to events,
+/// even if all other conditions (e.g. hints from Lua) promote propagation.
+///
+/// These checks don't rely on actual event data, only on how the window is
+/// shown to the user.
+///
+/// Example: a normal decorated window shouldn't propagate events.
+static bool is_window_opaque_to_events() {
+  switch (own_window_type.get(*state)) {
+    case window_type::NORMAL:
+    case window_type::UTILITY:
+      // decorated normal windows always consume events
+      if (!TEST_HINT(own_window_hints.get(*state), window_hints::UNDECORATED)) {
+        return true;
+      }
+      break;
+    case window_type::DESKTOP:
+      // assume conky is always on bottom; nothing to propagate events to
+      return true;
+    default:
+      break;
+  }
   return false;
 }
 
@@ -797,22 +776,16 @@ void process_surface_events(conky::display_output_x11 *surface,
 
   /* handle X events */
   while (XPending(display) != 0) {
-    XEvent ev;
-    XNextEvent(display, &ev);
+    auto ev = conky::x11::event::read(display);
 
-    /*
-    indicates whether processed event was consumed; true by default so we
-    don't propagate handled events unless they explicitly state they haven't
-    been consumed.
-    */
-    bool consumed = true;
-    void *cookie = nullptr;
-    bool handled = process_event(surface, display, ev, &consumed, &cookie);
+    // Holds a propagated event in case a handler decides it would be correct
+    // to propagate it.
+    conky::x11::event propagated;
+    bool handled = process_event(surface, display, ev, &propagated);
 
-    if (!consumed) { propagate_x11_event(ev, cookie); }
-
-    if (cookie != nullptr) {
-      delete static_cast<conky::xi_event_data *>(cookie);
+    if (propagated.is_some() && !is_window_opaque_to_events()) {
+      LOG_TRACE("propagating event: {}", propagated.variant_index());
+      propagate_x11_event(propagated);
     }
   }
 
@@ -820,13 +793,13 @@ void process_surface_events(conky::display_output_x11 *surface,
 }
 
 void display_output_x11::sigterm_cleanup() {
-  XDestroyRegion(x11_stuff.region);
-  x11_stuff.region = nullptr;
+  XDestroyRegion(window.repaint_region);
+  window.repaint_region = nullptr;
 #ifdef BUILD_XDAMAGE
-  if (x11_stuff.damage) {
-    XDamageDestroy(display, x11_stuff.damage);
-    XFixesDestroyRegion(display, x11_stuff.region2);
-    XFixesDestroyRegion(display, x11_stuff.part);
+  if (window.window_damage) {
+    XDamageDestroy(display, window.window_damage);
+    XFixesDestroyRegion(display, window.damage_region);
+    XFixesDestroyRegion(display, window.damage_scratch);
   }
 #endif /* BUILD_XDAMAGE */
 }
@@ -841,9 +814,9 @@ void display_output_x11::cleanup() {
   }
   destroy_window();
   free_fonts(utf8_mode.get(*state));
-  if (x11_stuff.region != nullptr) {
-    XDestroyRegion(x11_stuff.region);
-    x11_stuff.region = nullptr;
+  if (window.repaint_region != nullptr) {
+    XDestroyRegion(window.repaint_region);
+    window.repaint_region = nullptr;
   }
 }
 

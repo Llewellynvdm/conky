@@ -350,6 +350,7 @@ if(BUILD_X11)
     output/x11-color.cc
     output/x11.cc
     output/x11.h
+    output/x11-event.cc
   )
   set(optional_sources ${optional_sources} ${x11})
 endif(BUILD_X11)

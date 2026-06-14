@@ -30,11 +30,13 @@
 #include "config.h"
 
 #include "../lua/x11-settings.h"
+#include "x11-event.h"
 #include "x11.h"
 
 #include <X11/X.h>
 #include <X11/Xlibint.h>
 #include <X11/extensions/XI2.h>
+#include <functional>
 #undef min
 #undef max
 #include <sys/types.h>
@@ -826,7 +828,6 @@ void x11_init_window(lua::state &l, bool own) {
   int64_t input_mask = ExposureMask | PropertyChangeMask;
 #ifdef OWN_WINDOW
   if (own_window.get(l)) { input_mask |= StructureNotifyMask; }
-  bool xinput_ok = false;
   // not a loop; substitutes goto with break - if checks fail
   do {
     int _ignored;  // segfault if NULL
@@ -871,6 +872,15 @@ void x11_init_window(lua::state &l, bool own) {
       selected_events.clear_all();
       selected_events.set(XI_ButtonPress);
       selected_events.set(XI_ButtonRelease);
+      // It's not recommended to add event masks to special windows in X; causes
+      // a crash (thus own_window_type != window_type::DESKTOP)
+      if (own_window_type.get(l) != window_type::DESKTOP) {
+        selected_events.set(XI_Motion);
+#ifdef BUILD_MOUSE_EVENTS
+        selected_events.set(XI_Enter);
+        selected_events.set(XI_Leave);
+#endif /* BUILD_MOUSE_EVENTS */
+      }
       mask = selected_events.mask(XIAllMasterDevices);
       XISelectEvents(display, window.window, &mask, 1);
     }
@@ -884,17 +894,7 @@ void x11_init_window(lua::state &l, bool own) {
       }
     }
     XFreeDeviceList(info);
-
-    xinput_ok = true;
   } while (false);
-  // Fallback to basic X11 enter/leave events if xinput fails to init.
-  // It's not recommended to add event masks to special windows in X; causes a
-  // crash (thus own_window_type != TYPE_DESKTOP)
-#ifdef BUILD_MOUSE_EVENTS
-  if (!xinput_ok && own && own_window_type.get(l) != window_type::DESKTOP) {
-    input_mask |= PointerMotionMask | EnterWindowMask | LeaveWindowMask;
-  }
-#endif /* BUILD_MOUSE_EVENTS */
 #endif /* OWN_WINDOW */
   window.event_mask = input_mask;
   XSelectInput(display, window.window, input_mask);
@@ -1462,55 +1462,19 @@ void print_mouse_speed(struct text_object *obj, char *p,
   snprintf(p, p_max_size, "%d%%", (110 - threshold));
 }
 
-/// @brief Returns a mask for the event_type
-/// @param event_type Xlib event type
-/// @return Xlib event mask
-int ev_to_mask(int event_type, int button) {
-  switch (event_type) {
-    case KeyPress:
-      return KeyPressMask;
-    case KeyRelease:
-      return KeyReleaseMask;
-    case ButtonPress:
-      return ButtonPressMask;
-    case ButtonRelease:
-      switch (button) {
-        case 1:
-          return ButtonReleaseMask | Button1MotionMask;
-        case 2:
-          return ButtonReleaseMask | Button2MotionMask;
-        case 3:
-          return ButtonReleaseMask | Button3MotionMask;
-        case 4:
-          return ButtonReleaseMask | Button4MotionMask;
-        case 5:
-          return ButtonReleaseMask | Button5MotionMask;
-        default:
-          return ButtonReleaseMask;
-      }
-    case EnterNotify:
-      return EnterWindowMask;
-    case LeaveNotify:
-      return LeaveWindowMask;
-    case MotionNotify:
-      return PointerMotionMask;
-    default:
-      return NoEventMask;
-  }
-}
+void propagate_x11_event(conky::x11::event &event) {
+  if (!event.is_some()) { return; }
 
-void propagate_xinput_event(const conky::xi_event_data *ev) {
-  if (ev->evtype != XI_Motion && ev->evtype != XI_ButtonPress &&
-      ev->evtype != XI_ButtonRelease) {
-    return;
-  }
+  auto xi_event = event.downcast<conky::xi_pointer_event>();
+  if (!xi_event.has_value()) { return; }
+  auto &ev = xi_event->get();
 
   Window target = window.root;
   Window child = None;
-  conky::vec2i target_pos = ev->pos;
+  conky::vec2i target_pos = ev.pos;
   {
     std::vector<Window> below = query_x11_windows_at_pos(
-        display, ev->pos_absolute,
+        display, ev.pos_absolute,
         [](XWindowAttributes &a) { return a.map_state == IsViewable; });
     auto it = std::remove_if(below.begin(), below.end(),
                              [](Window w) { return w == window.window; });
@@ -1520,14 +1484,14 @@ void propagate_xinput_event(const conky::xi_event_data *ev) {
 
       int read_x, read_y;
       // Update event x and y coordinates to be target window relative
-      XTranslateCoordinates(display, window.desktop, ev->event,
-                            ev->pos_absolute.x(), ev->pos_absolute.y(), &read_x,
+      XTranslateCoordinates(display, window.desktop, ev.event,
+                            ev.pos_absolute.x(), ev.pos_absolute.y(), &read_x,
                             &read_y, &child);
       target_pos = conky::vec2i(read_x, read_y);
     }
   }
 
-  auto events = ev->generate_events(target, child, target_pos);
+  auto events = ev.generate_events(target, child, target_pos);
 
   XUngrabPointer(display, CurrentTime);
   for (auto it : events) {
@@ -1537,62 +1501,6 @@ void propagate_xinput_event(const conky::xi_event_data *ev) {
   }
 
   XFlush(display);
-}
-
-void propagate_x11_event(XEvent &ev, const void *cookie) {
-  bool focus = ev.type == ButtonPress;
-
-  // cookie must be allocated before propagation, and freed after
-  if (ev.type == GenericEvent && ev.xgeneric.extension == window.xi_opcode) {
-    if (cookie == nullptr) { return; }
-    return propagate_xinput_event(
-        reinterpret_cast<const conky::xi_event_data *>(cookie));
-  }
-
-  if (!(ev.type == KeyPress || ev.type == KeyRelease ||
-        ev.type == ButtonPress || ev.type == ButtonRelease ||
-        ev.type == MotionNotify || ev.type == EnterNotify ||
-        ev.type == LeaveNotify)) {
-    // Not a known input event; blindly propagating them causes loops and all
-    // sorts of other evil.
-    return;
-  }
-  // Note that using ev.xbutton is the same as using any of the above events.
-  // It's only important we don't access fields that are not common to all of
-  // them.
-
-  ev.xbutton.window = window.desktop;
-  ev.xbutton.x = ev.xbutton.x_root;
-  ev.xbutton.y = ev.xbutton.y_root;
-  ev.xbutton.time = CurrentTime;
-
-  /* forward the event to the window below conky (e.g. caja) or desktop */
-  {
-    std::vector<Window> below = query_x11_windows_at_pos(
-        display, conky::vec2i(ev.xbutton.x_root, ev.xbutton.y_root),
-        [](XWindowAttributes &a) { return a.map_state == IsViewable; });
-    auto it = std::remove_if(below.begin(), below.end(),
-                             [](Window w) { return w == window.window; });
-    below.erase(it, below.end());
-    if (!below.empty()) {
-      ev.xbutton.window = below.back();
-
-      Window _ignore;
-      // Update event x and y coordinates to be target window relative
-      XTranslateCoordinates(display, window.root, ev.xbutton.window,
-                            ev.xbutton.x_root, ev.xbutton.y_root, &ev.xbutton.x,
-                            &ev.xbutton.y, &_ignore);
-    }
-    // drop below vector
-  }
-
-  int mask =
-      ev_to_mask(ev.type, ev.type == ButtonRelease ? ev.xbutton.button : 0);
-  XUngrabPointer(display, CurrentTime);
-  XSendEvent(display, ev.xbutton.window, True, mask, &ev);
-  if (focus) {
-    XSetInputFocus(display, ev.xbutton.window, RevertToParent, CurrentTime);
-  }
 }
 
 Window query_x11_top_parent(Display *display, Window child) {

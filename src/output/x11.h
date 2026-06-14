@@ -43,6 +43,9 @@
 #ifdef BUILD_XDBE
 #include <X11/extensions/Xdbe.h>
 #endif
+#ifdef BUILD_XDAMAGE
+#include <X11/extensions/Xdamage.h>
+#endif
 
 #include <cstdint>
 #include <functional>
@@ -53,6 +56,7 @@
 
 #include "../geometry.h"
 #include "gui.h"
+#include "x11-event.h"
 
 #define ATOM(a) XInternAtom(display, #a, False)
 
@@ -62,6 +66,11 @@ extern Display *display;
 extern int screen;
 
 constexpr int argb8888_color_depth = 32;
+
+#ifndef BUILD_XDAMAGE
+using Damage = XID;
+using XserverRegion = XID;
+#endif
 
 struct conky_x11_window {
   /// XID of x11 root window
@@ -93,6 +102,23 @@ struct conky_x11_window {
 
   // Mask containing all events captured by conky
   int64_t event_mask;
+
+  /// XInput2 event base index; 0 if unavailable.
+  int xdamage_event_base = 0;
+  /// XDamage error base index; 0 if unavailable.
+  int xdamage_error_base = 0;
+
+  /// Client-side region accumulating areas needing repaint (from Expose
+  /// events).
+  Region repaint_region = 0;
+
+  /// XDamage handle for conky's window; `None` if XDamage is unavailable.
+  Damage window_damage = 0;
+  /// Server-side region accumulating damaged areas reported by XDamage.
+  XserverRegion damage_region = 0;
+  /// Server-side scratch region holding a single XDamageNotify area before it
+  /// is unioned into `damage_region`.
+  XserverRegion damage_scratch = 0;
 
 #ifdef BUILD_XDBE
   XdbeBackBuffer back_buffer;
@@ -134,7 +160,7 @@ void deinit_x11();
 /// position **at invocation time**.
 /// @param event event to forward
 /// @param cookie optional cookie data
-void propagate_x11_event(XEvent &event, const void *cookie = nullptr);
+void propagate_x11_event(conky::x11::event &event);
 
 /// @brief Returns a list of window values for the given atom.
 /// @param display display with which the atom is associated
