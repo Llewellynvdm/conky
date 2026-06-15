@@ -419,6 +419,13 @@ void set_transparent_background(conky_x11_window *window) {
     }
     return;
   }
+
+  // opaque window, or alpha was requested but no ARGB visual is available
+  // (e.g. no compositor): use the requested background colour as a solid
+  // fill, ignoring the alpha channel.
+  Colour colour = get_background_colour_preference(*state);
+  unsigned long xcolor = colour.to_x11_color(display, screen, false, false);
+  XSetWindowBackground(display, window->window, xcolor);
 }
 #endif /* OWN_WINDOW */
 
@@ -1404,11 +1411,11 @@ void xpmdb_swap_buffers(void) {
   if (use_xpmdb.get(*state)) {
     XCopyArea(display, window.back_buffer, window.window, window.gc, 0, 0,
               window.geometry.width(), window.geometry.height(), 0, 0);
-    unsigned long bg = 0;
-    if (window.color_depth == argb8888_color_depth) {
-      Colour c = get_background_colour_preference(*state);
-      bg = c.to_x11_color(display, screen, window.opacity < 0xff, true);
-    }
+    Colour c = get_background_colour_preference(*state);
+    unsigned long bg =
+        window.color_depth == argb8888_color_depth
+            ? c.to_x11_color(display, screen, window.opacity < 0xff, true)
+            : c.to_x11_color(display, screen, false, false);
     XSetForeground(display, window.gc, bg);
     XFillRectangle(display, window.drawable, window.gc, 0, 0,
                    window.geometry.width(), window.geometry.height());
