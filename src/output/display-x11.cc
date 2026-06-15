@@ -577,6 +577,19 @@ bool handle_event(conky::display_output_x11 *surface, Display *display,
   handle_press_release_events(ev, &consumed);
 #endif /* BUILD_MOUSE_EVENTS */
 
+  // If the device supports scroll valuators, then propagating scroll event
+  // from 4-7 legacy button events is wrong.
+  if (ev.detail >= 4 && ev.detail <= 7) {
+    bool has_scroll_valuators =
+        ev.device->valuator(valuator_t::SCROLL_X).index != SIZE_MAX ||
+        ev.device->valuator(valuator_t::SCROLL_Y).index != SIZE_MAX;
+    // ... if it doesn't, then we won't be propagating scroll via
+    // xi_pointer_move branch, so we should do it here, BUT only if
+    // handle_press_release_events handler didn't set it to true; i.e. user
+    // script said the event was consumed.
+    consumed |= has_scroll_valuators;
+  }
+
   if (!consumed) { *propagated = std::move(ev); }
   return true;
 }
@@ -758,9 +771,8 @@ static bool is_window_opaque_to_events() {
         return true;
       }
       break;
-    case window_type::DESKTOP:
-      // assume conky is always on bottom; nothing to propagate events to
-      return true;
+    // when window_type::DESKTOP, we still propagate to root managed by e.g.
+    // Openbox
     default:
       break;
   }
