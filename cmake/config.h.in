@@ -125,6 +125,8 @@
 
 #cmakedefine BUILD_LUA_CAIRO 1
 
+#cmakedefine BUILD_LUA_CAIRO_XLIB 1
+
 #cmakedefine BUILD_LUA_IMLIB2 1
 
 #cmakedefine BUILD_LUA_RSVG 1
