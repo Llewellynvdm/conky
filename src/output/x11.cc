@@ -862,6 +862,8 @@ void x11_init_window(lua::state &l, bool own) {
       selected_events.set(XI_Motion);
       selected_events.set(XI_ButtonPress);
       selected_events.set(XI_ButtonRelease);
+      selected_events.set(XI_Enter);
+      selected_events.set(XI_Leave);
 
       mask = selected_events.mask(XIAllMasterDevices);
       XISelectEvents(display, window.root, &mask, 1);

@@ -30,6 +30,7 @@
 #include "conky.h"
 
 #include "config.h"
+#include "geometry.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -904,23 +905,39 @@ void update_text_area() {
                dpi_scale(gap_x.get(*state)));
       break;
   }
+  auto border = conky::vec2i::uniform(get_border_total());
 #ifdef OWN_WINDOW
   if (align == alignment::NONE) {  // Let the WM manage the window
+#ifdef BUILD_X11
     xy = window.geometry.pos();
+#endif /* BUILD_X11 */
     fixed_pos = 1;
     fixed_size = 1;
   }
-#endif /* OWN_WINDOW */
-#ifdef OWN_WINDOW
 
-  if (own_window.get(*state) && (fixed_pos == 0)) {
-    int border_total = get_border_total();
-    text_start = conky::vec2i::uniform(border_total);
-    window.geometry.set_pos(xy - text_start);
+  if (own_window.get(*state)) {
+    // The managed window owns its geometry: display-x11 diffs
+    // window.geometry.size() against the desired size to decide when to
+    // XResizeWindow, so we must not overwrite the size here.
+    if (fixed_pos == 0) {
+      text_start = border;
+#ifdef BUILD_X11
+      window.geometry.set_pos(xy - border);
+#endif /* BUILD_X11 */
+    } else {
+      text_start = xy;
+    }
   } else
 #endif
   {
+    // Root-mounted: there's no managed window, so keep window.geometry (used
+    // for mouse hit-testing) current here. The border is painted outward from
+    // xy, so the rect is the border box around xy.
     text_start = xy;
+#ifdef BUILD_X11
+    window.geometry.set_pos(xy - border);
+    window.geometry.set_size(text_size + border * 2);
+#endif /* BUILD_X11 */
   }
 }
 

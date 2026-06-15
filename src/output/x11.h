@@ -133,6 +133,8 @@ struct conky_x11_window {
 
   /// @brief Window geometry in screen coordinate space
   conky::rect<int> geometry;
+
+  bool cursor_over_window = false;
 };
 
 extern struct conky_x11_window window;

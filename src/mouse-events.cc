@@ -802,6 +802,46 @@ std::vector<std::tuple<int, XEvent *>> xi_pointer_release::generate_events(
       target_pos);
 }
 
+std::vector<std::tuple<int, XEvent *>> crossing_events(
+    const xi_pointer_crossing_event *self, int type, long event_mask,
+    Window target, Window child, conky::vec2d target_pos) {
+  std::vector<std::tuple<int, XEvent *>> result{};
+
+  XEvent *produced = new XEvent;
+  std::memset(produced, 0, sizeof(XEvent));
+
+  XCrossingEvent *e = &produced->xcrossing;
+  e->type = type;
+  e->display = self->display;
+  e->root = self->root;
+  e->window = target;
+  e->subwindow = child;
+  e->time = CurrentTime;
+  e->x = static_cast<int>(target_pos.x());
+  e->y = static_cast<int>(target_pos.y());
+  e->x_root = static_cast<int>(self->pos_absolute.x());
+  e->y_root = static_cast<int>(self->pos_absolute.y());
+  e->mode = self->mode;
+  e->detail = self->detail;
+  e->same_screen = self->same_screen;
+  e->focus = self->focus;
+  e->state = self->mods.effective;
+
+  result.emplace_back(std::make_tuple(event_mask, produced));
+
+  return result;
+}
+std::vector<std::tuple<int, XEvent *>> xi_pointer_enter::generate_events(
+    Window target, Window child, conky::vec2d target_pos) const {
+  return crossing_events(this, EnterNotify, EnterWindowMask, target, child,
+                         target_pos);
+}
+std::vector<std::tuple<int, XEvent *>> xi_pointer_leave::generate_events(
+    Window target, Window child, conky::vec2d target_pos) const {
+  return crossing_events(this, LeaveNotify, LeaveWindowMask, target, child,
+                         target_pos);
+}
+
 #endif /* BUILD_X11 */
 
 #ifdef BUILD_MOUSE_EVENTS

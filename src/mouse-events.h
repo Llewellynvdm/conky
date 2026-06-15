@@ -421,11 +421,15 @@ struct xi_pointer_crossing_event : public xi_pointer_event {
   bool read_from_cookie(Display *display, const void *data) override;
 };
 
-// Crossing/focus events are sink-only: they're never propagated, so they
-// inherit `xi_event_base::generate_events` (which yields nothing) instead of
+struct xi_pointer_enter final : public xi_pointer_crossing_event {
+  GENERATES_EVENTS
+};
+struct xi_pointer_leave final : public xi_pointer_crossing_event {
+  GENERATES_EVENTS
+};
+// Focus events are sink-only: they're never propagated, so they inherit
+// `xi_event_base::generate_events` (which yields nothing) instead of
 // overriding it.
-struct xi_pointer_enter final : public xi_pointer_crossing_event {};
-struct xi_pointer_leave final : public xi_pointer_crossing_event {};
 struct xi_pointer_focus_in final : public xi_pointer_crossing_event {};
 struct xi_pointer_focus_out final : public xi_pointer_crossing_event {};
 

@@ -416,28 +416,7 @@ bool display_output_x11::main_loop_wait(double t) {
 static Window window_top_parent = None;
 
 #ifdef OWN_WINDOW
-
-#ifdef BUILD_MOUSE_EVENTS
-bool handle_event(conky::display_output_x11 *surface, Display *display,
-                  xi_pointer_enter ev, conky::x11::event *propagated) {
-  llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_ENTER,
-                                       ev.pos_absolute - window.geometry.pos(),
-                                       ev.pos_absolute));
-  return true;
-}
-
-bool handle_event(conky::display_output_x11 *surface, Display *display,
-                  xi_pointer_leave ev, conky::x11::event *propagated) {
-  llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_LEAVE,
-                                       ev.pos_absolute - window.geometry.pos(),
-                                       ev.pos_absolute));
-  return true;
-}
-#endif /* BUILD_MOUSE_EVENTS */
-
 static bool test_event_cursor_over_conky(xi_pointer_event &ev) {
-  if (own_window.get(*state)) { return true; }
-
   // Fast reject: if cursor is outside our geometry, it's definitely not over
   // this conky instance.  This avoids expensive X11 round-trips
   // (XIQueryPointer + XQueryTree) for the vast majority of events when
@@ -465,10 +444,49 @@ static bool test_event_cursor_over_conky(xi_pointer_event &ev) {
   return same_window;
 }
 
+#ifdef BUILD_MOUSE_EVENTS
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_enter ev, conky::x11::event *propagated) {
+  if (!own_window.get(*state)) {
+    if (!window.cursor_over_window) {
+      llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_ENTER,
+                                            ev.pos_absolute - window.geometry.pos(),
+                                            ev.pos_absolute));
+      window.cursor_over_window = true;
+    }
+    
+    *propagated = ev;
+  } else {
+    llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_ENTER,
+                                          ev.pos_absolute - window.geometry.pos(),
+                                          ev.pos_absolute));
+  }
+  return true;
+}
+
+bool handle_event(conky::display_output_x11 *surface, Display *display,
+                  xi_pointer_leave ev, conky::x11::event *propagated) {
+  if (!own_window.get(*state)) {
+    if (window.cursor_over_window) {
+      llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_LEAVE,
+                                           ev.pos_absolute - window.geometry.pos(),
+                                           ev.pos_absolute));
+      window.cursor_over_window = false;
+    }
+    
+    *propagated = ev;
+  } else {
+    llua_mouse_hook(mouse_crossing_event(mouse_event_t::AREA_LEAVE,
+                                         ev.pos_absolute - window.geometry.pos(),
+                                         ev.pos_absolute));
+  }
+  return true;
+}
+#endif /* BUILD_MOUSE_EVENTS */
+
 bool handle_event(conky::display_output_x11 *surface, Display *display,
                   xi_pointer_move ev, conky::x11::event *propagated) {
   bool lua_consumed = false;
-  if (!test_event_cursor_over_conky(ev)) { return true; }
 
 #ifdef BUILD_MOUSE_EVENTS
   modifier_state_t mods = x11_modifier_state(ev.mods.effective);
@@ -479,6 +497,36 @@ bool handle_event(conky::display_output_x11 *surface, Display *display,
   bool has_scroll_y = ev.test_valuator(valuator_t::SCROLL_Y);
   bool is_move = has_move_x || has_move_y;
   bool is_scroll = has_scroll_x || has_scroll_y;
+
+  if (!own_window.get(*state)) {
+    // Extra checks when conky is mounted on root window with mouse events
+    // enabled.
+
+    bool cursor_over_conky = test_event_cursor_over_conky(ev);
+
+    if (is_move) {
+      // generate crossing events; these are artificial and crossing events are
+      // useless to others - so we never propagate these
+      if (cursor_over_conky) {
+        if (!window.cursor_over_window) {
+          llua_mouse_hook(mouse_crossing_event(
+              mouse_event_t::AREA_ENTER,
+              ev.pos_absolute - window.geometry.pos(), ev.pos_absolute));
+        }
+        window.cursor_over_window = true;
+      } else if (window.cursor_over_window) {
+        llua_mouse_hook(mouse_crossing_event(
+            mouse_event_t::AREA_LEAVE,
+            ev.pos_absolute - window.geometry.pos(), ev.pos_absolute));
+        window.cursor_over_window = false;
+      }
+    }
+
+    // We only capture mouse events on !own_window when BUILD_MOUSE_EVENTS,
+    // in any other case, this check does nothing.
+    if (!cursor_over_conky) { return true; }
+  }
+  
   LOG_TRACE_WITH(({"move_x", has_move_x}, {"move_y", has_move_y},
                   {"scroll_x", has_scroll_x}, {"scroll_y", has_scroll_y}),
                  "xi motion: is_move={} is_scroll={}", is_move, is_scroll);
