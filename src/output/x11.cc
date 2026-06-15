@@ -827,7 +827,11 @@ void x11_init_window(lua::state &l, bool own) {
 
   int64_t input_mask = ExposureMask | PropertyChangeMask;
 #ifdef OWN_WINDOW
-  if (own_window.get(l)) { input_mask |= StructureNotifyMask; }
+  if (own_window.get(l)) {
+    // We use XI2 instead of ButtonPressMask and ButtonReleaseMask, but they
+    // need to be set so Fluxbox doesn't passively steal our input.
+    input_mask |= StructureNotifyMask | ButtonPressMask | ButtonReleaseMask;
+  }
   // not a loop; substitutes goto with break - if checks fail
   do {
     int _ignored;  // segfault if NULL
