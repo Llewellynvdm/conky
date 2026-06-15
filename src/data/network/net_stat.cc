@@ -192,15 +192,33 @@ void parse_net_stat_arg(struct text_object *obj, const char *arg,
 
 void parse_net_stat_bar_arg(struct text_object *obj, const char *arg,
                             void *free_at_crash) {
-  if (arg != nullptr) {
-    arg = scan_bar(obj, arg, 1);
-    obj->data.opaque = get_net_stat(arg, obj, free_at_crash);
-  } else {
+  if (arg == nullptr) {
     // default to DEFAULTNETDEV
     char *buf = strndup(DEFAULTNETDEV, text_buffer_size.get(*state));
     obj->data.opaque = get_net_stat(buf, obj, free_at_crash);
     free(buf);
+    return;
   }
+
+  /* The interface name and bar dimensions may appear in either order.
+   * scan_command() yields the leading interface name for the documented
+   * "(net) (height),(width)" order (e.g. "wlp3s0 3,260", mirroring cpubar and
+   * the net speed graphs), and returns nullptr when the argument starts with a
+   * digit, i.e. when the "(height),(width)" spec comes first. Parsing the
+   * interface out first lets scan_bar see the dimensions regardless of order,
+   * so small heights are no longer dropped. */
+  auto [dev, skip] = scan_command(arg);
+  const char *rest = scan_bar(obj, arg + skip, 1);
+  if (dev == nullptr) { dev = scan_command(rest).first; }
+
+  if (dev != nullptr && dev[0] != '\0') {
+    obj->data.opaque = get_net_stat(dev, obj, free_at_crash);
+  } else {
+    char *buf = strndup(DEFAULTNETDEV, text_buffer_size.get(*state));
+    obj->data.opaque = get_net_stat(buf, obj, free_at_crash);
+    free(buf);
+  }
+  free(dev);
 }
 
 void print_downspeed(struct text_object *obj, char *p,

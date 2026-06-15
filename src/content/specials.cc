@@ -189,20 +189,6 @@ const char *scan_bar(struct text_object *obj, const char *args, double scale) {
   return args;
 }
 
-#ifdef BUILD_GUI
-void scan_font(struct text_object *obj, const char *args) {
-  if ((args != nullptr) && (*args != 0)) {
-    obj->data.s = strndup(args, DEFAULT_TEXT_BUFFER_SIZE);
-  }
-}
-
-void apply_graph_colours(struct graph *g, const char *first_colour_name,
-                         const char *last_colour_name) {
-  g->first_colour = parse_color(first_colour_name);
-  g->last_colour = parse_color(last_colour_name);
-  g->colours_set = true;
-}
-
 /**
  * parses a possibly-quoted command from the prefix of a string.
  * @param[in] s argument string to parse
@@ -239,6 +225,20 @@ std::pair<char *, size_t> scan_command(const char *s) {
     for (len = 0; s[len] != '\0' && !isspace(s[len]); len++);
     return {strndup(s, len), len};
   }
+}
+
+#ifdef BUILD_GUI
+void scan_font(struct text_object *obj, const char *args) {
+  if ((args != nullptr) && (*args != 0)) {
+    obj->data.s = strndup(args, DEFAULT_TEXT_BUFFER_SIZE);
+  }
+}
+
+void apply_graph_colours(struct graph *g, const char *first_colour_name,
+                         const char *last_colour_name) {
+  g->first_colour = parse_color(first_colour_name);
+  g->last_colour = parse_color(last_colour_name);
+  g->colours_set = true;
 }
 
 static void free_graph(struct text_object *obj) {

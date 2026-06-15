@@ -2546,8 +2546,8 @@ values:
   - name: wireless_link_bar
     desc: Wireless link quality bar. Linux only.
     args:
-      - (height),(width)
       - (net)
+      - (height),(width)
   - name: wireless_link_qual
     desc: Wireless link quality. Linux only.
     args:
