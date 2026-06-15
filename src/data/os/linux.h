@@ -27,6 +27,11 @@
 
 #include "../../common.h"
 
+#include <iosfwd>
+#include <optional>
+#include <string>
+#include <string_view>
+
 void print_disk_protect_queue(struct text_object *, char *, unsigned int);
 
 void print_ioscheduler(struct text_object *, char *, unsigned int);
@@ -63,6 +68,18 @@ int get_entropy_poolsize(unsigned int *);
 int update_stat(void);
 
 void print_distribution(struct text_object *, char *, unsigned int);
+
+// Returns the value of `key` from a `KEY=VALUE` formatted stream (e.g. an
+// os-release file). Surrounding double quotes are stripped when present (the
+// spec allows unquoted values). Returns nullopt when the key is absent or its
+// value is empty.
+std::optional<std::string> get_kv_field(std::istream &in, std::string_view key);
+
+// Heuristically extracts a distribution name from a /proc/version line by
+// capturing the first parenthesised, uppercase-initial token. Returns nullopt
+// when no such token is found.
+std::optional<std::string> parse_distribution_from_proc_version(
+    const std::string &version);
 
 bool is_conky_already_running(void);
 

@@ -2823,6 +2823,50 @@ int update_diskio(void) {
   return 0;
 }
 
+std::optional<std::string> get_kv_field(std::istream &in,
+                                        std::string_view key) {
+  std::string line;
+  while (std::getline(in, line)) {
+    // Match "<key>=" at the start of the line.
+    if (line.rfind(key, 0) != 0 || line.size() <= key.size() ||
+        line[key.size()] != '=') {
+      continue;
+    }
+    std::string value = line.substr(key.size() + 1);
+
+    // Values may be quoted or unquoted; strip surrounding quotes when present.
+    if (value.size() >= 2 && value.front() == '"' && value.back() == '"') {
+      value = value.substr(1, value.size() - 2);
+    }
+
+    if (!value.empty()) { return value; }
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> parse_distribution_from_proc_version(
+    const std::string &version) {
+  for (size_t from = 1; from < version.size(); ++from) {
+    // First braced uppercase text is usually the distribution name:
+    if (version[from - 1] == '(' && std::isupper(version[from])) {
+      // Capture braced content until version number or closing brace:
+      size_t to = from + 1;
+      for (; to < version.size() - 1; to++) {
+        if (version[to] == ' ' &&
+            (std::isdigit(version[to + 1]) || version[to + 1] == ')')) {
+          break;
+        }
+      }
+      if (to >= version.size() - 1) {
+        // No ending delimiter found.
+        break;
+      }
+      return version.substr(from, to - from);
+    }
+  }
+  return std::nullopt;
+}
+
 void print_distribution(struct text_object * /*obj*/, char *p,
                         unsigned int p_max_size) {
   if (p_max_size == 0) return;  // can't do nothing
@@ -2844,23 +2888,11 @@ void print_distribution(struct text_object * /*obj*/, char *p,
     os_rel.open("/usr/lib/os-release");
   }
   if (os_rel) {
-    std::string line;
-    while (std::getline(os_rel, line)) {
-      // NAME is "A string identifying the operating system, without a version
-      // component, and suitable for presentation to the user."
-      if (line.rfind("NAME=", 0) == 0) {
-        std::string name = line.substr(5);
-
-        if (name.size() >= 2 && name.front() == '"' && name.back() == '"') {
-          name = name.substr(1, name.size() - 2);
-        } else {
-          // unexpected format - string not quoted
-          break;
-        }
-
-        set_result(name);
-        return;
-      }
+    // NAME is "A string identifying the operating system, without a version
+    // component, and suitable for presentation to the user."
+    if (auto name = get_kv_field(os_rel, "NAME")) {
+      set_result(*name);
+      return;
     }
   }
 
@@ -2879,25 +2911,9 @@ void print_distribution(struct text_object * /*obj*/, char *p,
   if (proc_version) {
     std::string buff;
     std::getline(proc_version, buff);
-    for (size_t from = 1; from < buff.size(); ++from) {
-      // First braced uppercase text is usually the distribution name:
-      if (buff[from - 1] == '(' && std::isupper(buff[from])) {
-        size_t to = from;
-        // Capture braced content until version number or closing brace:
-        for (size_t to = from + 1; to < buff.size() - 1; to++) {
-          if (buff[to] == ' ' &&
-              (std::isdigit(buff[to + 1]) || buff[to + 1] == ')')) {
-            break;
-          }
-        }
-        if (to == buff.size() - 1) {
-          // No ending delimiter found.
-          break;
-        }
-        buff = buff.substr(from, to - from);
-        set_result(buff);
-        return;
-      }
+    if (auto name = parse_distribution_from_proc_version(buff)) {
+      set_result(*name);
+      return;
     }
   }
 
