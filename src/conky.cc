@@ -1931,6 +1931,17 @@ void main_loop() {
   next_update_time =
       get_time() - fmod(get_realtime(), active_update_interval());
   info.looped = 0;
+
+  /* `${top cpu}` reports the share of CPU time a process consumed between two
+   * samples, so it needs a prior sample to diff against. In one-shot mode
+   * (total_run_times == 1) only a single frame is produced, which would leave
+   * every process reading 0% (#1376). Take a priming sample now and push the
+   * first (and only) real update back by one interval so it has a baseline. */
+  if (top_cpu != 0 && total_run_times.get(*state) == 1) {
+    update_top();
+    next_update_time += active_update_interval();
+  }
+
   while (terminate == 0 && (total_run_times.get(*state) == 0 ||
                             info.looped < total_run_times.get(*state))) {
     if ((update_interval_on_battery.get(*state) != NOBATTERY)) {
