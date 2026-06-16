@@ -875,6 +875,8 @@ void update_text_area() {
         conky::vec2i(text_size.x() + 1, dpi_scale(minimum_height.get(*state))));
     int mw = dpi_scale(maximum_width.get(*state));
     if (mw > 0) text_size = text_size.min(conky::vec2i(mw, text_size.y()));
+
+    LOG_TRACE("computed text size: {}", text_size);
   }
 
   alignment align = text_alignment.get(*state);
@@ -953,6 +955,10 @@ static draw_mode_t draw_mode; /* FG, BG or OUTLINE */
 
 static int text_size_updater(char *s, int special_index) {
   int w = 0;
+  /* extra line height contributed by tall bars/gauges/graphs, mirroring the
+   * `cur_y_add` accumulator in draw_each_line_inner. Tracked separately from
+   * last_font_height so that voffsets on the same line are not discarded. */
+  int cur_y_add = 0;
   char *p;
   special_node *current = specials;
 
@@ -973,9 +979,8 @@ static int text_size_updater(char *s, int special_index) {
           current->type == text_node_t::GAUGE ||
           current->type == text_node_t::GRAPH) {
         w += current->width;
-        if (current->height > last_font_height) {
-          last_font_height = current->height;
-          last_font_height += font_height();
+        if (current->height > cur_y_add && current->height > font_height()) {
+          cur_y_add = current->height;
         }
       } else if (current->type == text_node_t::OFFSET) {
         if (current->arg > 0) { w += current->arg; }
@@ -1009,7 +1014,7 @@ static int text_size_updater(char *s, int special_index) {
   int mw = dpi_scale(maximum_width.get(*state));
   if (mw > 0) { text_size.set_x(std::min(mw, text_size.x())); }
 
-  text_size += conky::vec2i(0, last_font_height);
+  text_size += conky::vec2i(0, last_font_height + cur_y_add);
   last_font_height = font_height();
   return special_index;
 }
