@@ -209,8 +209,14 @@ static void remove_deleted_chars(char *string, unsigned int p_max_size) {
  * @param[in] buf output of a command executed by an exec_cb object
  * @return number between 0.0 and 100.0
  */
-static inline double get_barnum(const char *buf) {
+double get_barnum(const char *buf) {
   double barnum;
+
+  /* The exec callback may not have produced output yet (e.g. when the
+   * text object is newly created via conky_parse inside a Lua script).
+   * Return 0.0 silently — this mirrors how print_exec/fill_p handles
+   * the same transient condition (#1699). */
+  if (buf == nullptr || buf[0] == '\0') { return 0.0; }
 
   if (sscanf(buf, "%lf", &barnum) != 1) {
     LOG_ERROR(

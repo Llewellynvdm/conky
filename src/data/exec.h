@@ -88,5 +88,6 @@ void register_exec(struct text_object *);
 void print_exec(struct text_object *, char *, unsigned int);
 double execbarval(struct text_object *);
 void free_exec(struct text_object *);
+double get_barnum(const char *buf);
 
 #endif /* _EXEC_H */

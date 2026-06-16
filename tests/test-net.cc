@@ -34,6 +34,7 @@
 #include <conky.h>
 #include <content/specials.h>
 #include <content/text_object.h>
+#include <data/exec.h>
 #include <data/network/net_stat.h>
 #include <lua/lua-config.hh>
 
@@ -80,4 +81,22 @@ TEST_CASE("parse_net_stat_bar_arg parses dimensions regardless of arg order",
     REQUIRE(height == 6);  // default_bar_height
     REQUIRE(width == 0);   // default_bar_width
   }
+}
+
+TEST_CASE("get_barnum returns 0.0 silently for empty or null input", "[exec]") {
+  SECTION("empty string returns 0.0") { REQUIRE(get_barnum("") == 0.0); }
+
+  SECTION("nullptr returns 0.0") { REQUIRE(get_barnum(nullptr) == 0.0); }
+
+  SECTION("valid integer returns parsed value") {
+    REQUIRE(get_barnum("42") == 42.0);
+  }
+
+  SECTION("valid float returns parsed value") {
+    REQUIRE(get_barnum("73.5") == 73.5);
+  }
+
+  SECTION("value at 100 returns 100") { REQUIRE(get_barnum("100") == 100.0); }
+
+  SECTION("value at 0 returns 0") { REQUIRE(get_barnum("0") == 0.0); }
 }
