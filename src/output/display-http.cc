@@ -30,6 +30,7 @@
 #include "display-http.hh"
 
 #include <iostream>
+#include <mutex>
 #include <sstream>
 #include <unordered_map>
 
@@ -51,7 +52,15 @@ void register_output<output_t::HTTP>(display_outputs_t &outputs) {
 /* older API */
 #define MHD_Result int
 #endif /* MHD_YES */
-std::string webpage;
+/* `presented` is the page served to clients: read by libmicrohttpd's worker
+ * thread in sendanswer() and published by the draw thread in end_draw_text(),
+ * so every access must hold builder_mutex. The draw thread assembles into
+ * `webpage` (which it alone touches) and swaps it in under the lock; this way
+ * a request never observes a half-built page or races std::string's buffer
+ * management, which previously corrupted the heap and hung the process. */
+std::mutex builder_mutex;
+std::string presented;
+static std::string webpage;
 struct MHD_Daemon *httpd;
 static conky::simple_config_setting<bool> http_refresh("http_refresh", false,
                                                        true);
@@ -62,8 +71,15 @@ MHD_Result sendanswer(void *cls, struct MHD_Connection *connection,
                       const char *url, const char *method, const char *version,
                       const char *upload_data, size_t *upload_data_size,
                       void **con_cls) {
-  struct MHD_Response *response = MHD_create_response_from_buffer(
-      webpage.length(), (void *)webpage.c_str(), MHD_RESPMEM_PERSISTENT);
+  struct MHD_Response *response;
+  {
+    /* Copy the page out under the lock; MHD_RESPMEM_MUST_COPY snapshots the
+     * bytes so we don't hand MHD a pointer into a string the draw thread may
+     * reallocate. */
+    std::lock_guard<std::mutex> lock(builder_mutex);
+    response = MHD_create_response_from_buffer(
+        presented.length(), (void *)presented.c_str(), MHD_RESPMEM_MUST_COPY);
+  }
   MHD_Result ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
   MHD_destroy_response(response);
   if (cls || url || method || version || upload_data || upload_data_size ||
@@ -201,7 +217,12 @@ void display_output_http::begin_draw_text() {
   }
 }
 
-void display_output_http::end_draw_text() { webpage.append(WEBPAGE_END); }
+void display_output_http::end_draw_text() {
+  webpage.append(WEBPAGE_END);
+  /* Publish the freshly built page for the HTTP worker thread to serve. */
+  std::lock_guard<std::mutex> lock(builder_mutex);
+  presented.swap(webpage);
+}
 
 void display_output_http::draw_string(const char *s, int) {
   std::string::size_type origlen = webpage.length();
