@@ -49,6 +49,7 @@
 #include <time.h>
 #include <algorithm>
 #include <unordered_map>
+#include <vector>
 #include "../../lua/setting.hh"
 #include "../top.h"
 
@@ -924,6 +925,18 @@ void determine_longstat_file(void) {
   stat_initialized = 1;
 }
 
+// Kernel CPU numbers that are present (populated), in ascending order as
+// reported by /sys/devices/system/cpu/present. Used to map a "cpuN" line from
+// /proc/stat to its slot in the cpu[]/info.cpu_usage arrays (slot 0 is the
+// aggregate, present cores occupy slots 1..cpu_count in this order).
+static std::vector<int> presented_cpus;
+
+int cpu_present_slot(const std::vector<int> &present, int cpu_number) {
+  auto it = std::lower_bound(present.begin(), present.end(), cpu_number);
+  if (it == present.end() || *it != cpu_number) { return -1; }
+  return static_cast<int>(it - present.begin()) + 1;
+}
+
 void get_cpu_count(void) {
   FILE *stat_fp;
   static int reported = 0;
@@ -939,7 +952,7 @@ void get_cpu_count(void) {
     return;
   }
 
-  info.cpu_count = 0;
+  presented_cpus.clear();
 
   while (!feof(stat_fp)) {
     if (fgets(buf, 255, stat_fp) == nullptr) { break; }
@@ -952,7 +965,6 @@ void get_cpu_count(void) {
     for (str1 = buf;; str1 = nullptr) {
       token = strtok_r(str1, ",", &saveptr1);
       if (token == nullptr) break;
-      ++info.cpu_count;
 
       subtoken1 = -1;
       subtoken2 = -1;
@@ -964,9 +976,14 @@ void get_cpu_count(void) {
         else
           subtoken2 = strtol(subtoken, nullptr, 10);
       }
-      if (subtoken2 > 0) info.cpu_count += subtoken2 - subtoken1;
+      if (subtoken1 < 0) continue;
+      if (subtoken2 < 0) subtoken2 = subtoken1;
+      for (int core = subtoken1; core <= subtoken2; core++) {
+        presented_cpus.push_back(core);
+      }
     }
   }
+  info.cpu_count = static_cast<unsigned int>(presented_cpus.size());
   info.cpu_usage = (float *)malloc((info.cpu_count + 1) * sizeof(float));
 
   fclose(stat_fp);
@@ -1031,6 +1048,13 @@ int update_stat(void) {
     return 0;
   }
 
+  /* Reset per-core usage so that cores which are currently offline (and thus
+   * absent from /proc/stat) report 0 instead of their last, now-stale value.
+   * The aggregate (slot 0) is always present and recomputed below. */
+  for (unsigned int c = 1; c <= info.cpu_count; c++) {
+    info.cpu_usage[c] = 0.0;
+  }
+
   idx = 0;
   while (!feof(stat_fp)) {
     if (fgets(buf, 255, stat_fp) == nullptr) { break; }
@@ -1040,7 +1064,12 @@ int update_stat(void) {
     } else if (strncmp(buf, "cpu", 3) == 0) {
       double delta;
       if (isdigit((unsigned char)buf[3])) {
-        idx++;  // just increment here since the CPU index can skip numbers
+        // Index by the kernel CPU number's position in the present set rather
+        // than a running counter, so offline cores (missing from /proc/stat)
+        // don't shift the remaining cores into the wrong slots.
+        int slot = cpu_present_slot(presented_cpus, atoi(buf + 3));
+        if (slot < 0) { continue; }
+        idx = static_cast<unsigned int>(slot);
       } else {
         idx = 0;
       }

@@ -31,10 +31,36 @@
 #include <data/os/linux.h>
 
 #include <sstream>
+#include <vector>
 
 TEST_CASE("get_entropy_avail returns 0", "[get_entropy_avail]") {
   unsigned int unused = 0;
   REQUIRE(get_entropy_avail(&unused) == 0);
+}
+
+TEST_CASE("cpu_present_slot maps cpu numbers to slots", "[cpu]") {
+  SECTION("contiguous present set") {
+    std::vector<int> present{0, 1, 2, 3};
+    REQUIRE(cpu_present_slot(present, 0) == 1);
+    REQUIRE(cpu_present_slot(present, 3) == 4);
+    REQUIRE(cpu_present_slot(present, 4) == -1);
+  }
+
+  SECTION("sparse present set (e.g. /sys reports \"0,3-7\")") {
+    std::vector<int> present{0, 3, 4, 5, 6, 7};
+    REQUIRE(cpu_present_slot(present, 0) == 1);
+    REQUIRE(cpu_present_slot(present, 3) == 2);
+    REQUIRE(cpu_present_slot(present, 7) == 6);
+    // gaps are not present
+    REQUIRE(cpu_present_slot(present, 1) == -1);
+    REQUIRE(cpu_present_slot(present, 2) == -1);
+    REQUIRE(cpu_present_slot(present, 8) == -1);
+  }
+
+  SECTION("empty present set") {
+    std::vector<int> present{};
+    REQUIRE(cpu_present_slot(present, 0) == -1);
+  }
 }
 
 TEST_CASE("get_kv_field reads KEY=VALUE entries", "[distribution]") {

@@ -31,6 +31,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 void print_disk_protect_queue(struct text_object *, char *, unsigned int);
 
@@ -66,6 +67,11 @@ int get_entropy_avail(unsigned int *);
 int get_entropy_poolsize(unsigned int *);
 
 int update_stat(void);
+
+// Maps a kernel CPU number to its 1-based slot in the per-core cpu usage arrays
+// given the ascending list of present CPU numbers, or -1 if not present. Slot 0
+// is the aggregate. Exposed for testing.
+int cpu_present_slot(const std::vector<int> &present, int cpu_number);
 
 void print_distribution(struct text_object *, char *, unsigned int);
 
