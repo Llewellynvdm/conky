@@ -127,6 +127,16 @@ static FILE *pid_popen(const char *command, const char *mode, pid_t *child) {
     }
     close(childend);
 
+    // Discard the command's stderr. We only capture stdout, so without this a
+    // command that chatters on stderr every update interval (e.g. `sensors`
+    // complaining about an unreadable subfeature) would inherit conky's stderr
+    // and flood the terminal or system journal (#1596).
+    int devnull = open("/dev/null", O_WRONLY);
+    if (devnull != -1) {
+      dup2(devnull, STDERR_FILENO);
+      if (devnull != STDERR_FILENO) { close(devnull); }
+    }
+
     execl("/bin/sh", "sh", "-c", remove_excess_quotes(command),
           (char *)nullptr);
     _exit(EXIT_FAILURE);  // child should die here, (normally execl will take
