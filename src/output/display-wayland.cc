@@ -1218,6 +1218,9 @@ void window_allocate_buffer(struct window *window) {
     cairo_surface_set_device_scale(cs, scale, scale);
 
     if (!window->shm_surface[i]) {
+      if (i == 1) {
+        window->shm_surface[0] = nullptr;
+      }
       shm_pool_destroy(pool);
       return;
     }
