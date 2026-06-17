@@ -26,6 +26,7 @@
 
 #include "display-wayland.hh"
 
+#include <spdlog/details/console_globals.h>
 #include <wayland-client.h>
 // #include "wayland.h"
 #include <cairo.h>
@@ -267,7 +268,8 @@ struct window {
   struct wl_shm *shm;
   struct wl_surface *surface;
   struct zwlr_layer_surface_v1 *layer_surface;
-  int scale, pending_scale;
+  int scale = 1;
+  int pending_scale = 1;
   int current_buffer;
   std::shared_ptr<cairo_surface_t> shm_surface[2];
   std::unique_ptr<uint8_t[]> private_buffer;
@@ -326,6 +328,7 @@ void output_scale(void *data, struct wl_output *wl_output, int32_t factor) {
   /* For now, assume we have one output and adopt its scale unconditionally. */
   /* We should also re-render immediately when scale changes. */
   global_window->pending_scale = factor;
+  LOG_TRACE_WITH(({"window->scale", global_window->scale}), "recieved scale event: {}", factor);
 }
 #endif
 
@@ -677,6 +680,9 @@ bool display_output_wayland::main_loop_wait(double t) {
     int fixed_size = 0;
 
     bool scale_changed = global_window->scale != global_window->pending_scale;
+    if (scale_changed)
+      LOG_TRACE("scale changed from {} to {}", global_window->scale,
+                global_window->pending_scale);
 
     /* resize window if it isn't right size */
     if ((fixed_size == 0) &&
@@ -1202,7 +1208,7 @@ static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
 void window_allocate_buffer(struct window *window) {
   assert(window->shm != nullptr);
 
-  int scale = window->pending_scale;
+  int scale = window->scale;
   struct shm_pool *pool;
   pool = shm_pool_create(
       window->shm, data_length_for_shm_surface(&window->rectangle, scale) * 2);
@@ -1216,13 +1222,11 @@ void window_allocate_buffer(struct window *window) {
         window->shm, &window->rectangle, pool, scale);
 
     if (!window->shm_surface[i]) {
-      if (i == 1) {
-        window->shm_surface[0] = nullptr;
-      }
+      if (i == 1) { window->shm_surface[0] = nullptr; }
       shm_pool_destroy(pool);
       return;
     }
-    
+
     auto cs = window->shm_surface[i].get();
     cairo_surface_set_device_scale(cs, scale, scale);
 
@@ -1260,23 +1264,18 @@ void window_allocate_buffer(struct window *window) {
 
 struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
                              int width, int height) {
-  struct window *window;
-  window = new struct window;
+  window *result;
+  result = new window();
 
-  window->rectangle.set_pos(vec2<size_t>::Zero());
-  window->rectangle.set_size(width, height);
-  window->scale = 0;
-  window->pending_scale = 1;
+  result->rectangle.set_pos(vec2<size_t>::Zero());
+  result->rectangle.set_size(width, height);
+  result->scale = 1;
+  result->pending_scale = 1;
 
-  window->surface = surface;
-  window->shm = shm;
-  for (int i = 0; i < 2; i++) { window->shm_surface[i] = nullptr; }
-  window->cairo_surface = nullptr;
-  window->cr = nullptr;
-  window->layout = nullptr;
-  window->pango_context = nullptr;
+  result->surface = surface;
+  result->shm = shm;
 
-  return window;
+  return result;
 }
 
 void window_free_buffer(struct window *window) {
@@ -1309,6 +1308,7 @@ void window_destroy(struct window *window) {
 }
 
 void window_resize(struct window *window, int width, int height) {
+  LOG_TRACE("resizing conky display ({}) to {}x{}", window->rectangle, width, height);
   window_free_buffer(window);
   window->rectangle.set_size(width, height);
   window_allocate_buffer(window);
@@ -1320,7 +1320,7 @@ void window_commit_buffer(struct window *window) {
 
   cairo_surface_flush(window->cairo_surface.get());
 
-  int scale = window->pending_scale;
+  int scale = window->scale;
   int length = data_length_for_shm_surface(&window->rectangle, scale);
 
   auto shm_surf = window->shm_surface[window->current_buffer].get();
@@ -1328,8 +1328,7 @@ void window_commit_buffer(struct window *window) {
 
   std::memcpy(shm_data, window->private_buffer.get(), length);
 
-  wl_surface_set_buffer_scale(global_window->surface,
-                              global_window->pending_scale);
+  wl_surface_set_buffer_scale(global_window->surface, global_window->scale);
   wl_surface_attach(window->surface, get_buffer_from_cairo_surface(shm_surf), 0,
                     0);
   /* repaint all the pixels in the surface, change size to only repaint changed
