@@ -1214,8 +1214,6 @@ void window_allocate_buffer(struct window *window) {
   for (int i = 0; i < 2; ++i) {
     window->shm_surface[i] = create_shm_surface_from_pool(
         window->shm, &window->rectangle, pool, scale);
-    auto cs = window->shm_surface[i].get();
-    cairo_surface_set_device_scale(cs, scale, scale);
 
     if (!window->shm_surface[i]) {
       if (i == 1) {
@@ -1224,6 +1222,9 @@ void window_allocate_buffer(struct window *window) {
       shm_pool_destroy(pool);
       return;
     }
+    
+    auto cs = window->shm_surface[i].get();
+    cairo_surface_set_device_scale(cs, scale, scale);
 
     /* make sure we destroy the pool when the surface is destroyed */
     struct shm_surface_data *data;
