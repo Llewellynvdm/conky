@@ -258,16 +258,16 @@ bool display_output_wayland::detect() {
 }
 
 static int epoll_fd;
-static struct epoll_event ep[1];
+static epoll_event ep[1];
 
-static struct window *global_window;
+static window *global_window;
 static wl_display *global_display;
 
 struct window {
-  struct rect<size_t> rectangle;
-  struct wl_shm *shm;
-  struct wl_surface *surface;
-  struct zwlr_layer_surface_v1 *layer_surface;
+  rect<size_t> rectangle;
+  wl_shm *shm;
+  wl_surface *surface;
+  zwlr_layer_surface_v1 *layer_surface;
   int scale = 1;
   int pending_scale = 1;
   int current_buffer;
@@ -280,27 +280,26 @@ struct window {
 };
 
 struct {
-  struct wl_registry *registry;
-  struct wl_compositor *compositor;
-  struct wl_shm *shm;
-  struct wl_surface *surface;
-  struct wl_seat *seat;
-  struct wl_pointer *pointer;
-  struct wl_output *output;
-  struct xdg_wm_base *shell;
-  struct zwlr_layer_shell_v1 *layer_shell;
+  wl_registry *registry;
+  wl_compositor *compositor;
+  wl_shm *shm;
+  wl_surface *surface;
+  wl_seat *seat;
+  wl_pointer *pointer;
+  wl_output *output;
+  xdg_wm_base *shell;
+  zwlr_layer_shell_v1 *layer_shell;
 } wl_globals;
 
-static void xdg_wm_base_ping(void *data, struct xdg_wm_base *shell,
-                             uint32_t serial) {
+static void xdg_wm_base_ping(void *data, xdg_wm_base *shell, uint32_t serial) {
   xdg_wm_base_pong(shell, serial);
 }
 
-static const struct xdg_wm_base_listener xdg_wm_base_listener = {
+static const xdg_wm_base_listener xdg_wm_base_listener = {
     /*.ping =*/&xdg_wm_base_ping,
 };
 
-static void output_geometry(void *data, struct wl_output *wl_output, int32_t x,
+static void output_geometry(void *data, wl_output *wl_output, int32_t x,
                             int32_t y, int32_t physical_width,
                             int32_t physical_height, int32_t subpixel,
                             const char *make, const char *model,
@@ -316,29 +315,29 @@ static void output_geometry(void *data, struct wl_output *wl_output, int32_t x,
             y + physical_height));  // TODO: use xdg_output.logical_position
 }
 
-static void output_mode(void *data, struct wl_output *wl_output, uint32_t flags,
+static void output_mode(void *data, wl_output *wl_output, uint32_t flags,
                         int32_t width, int32_t height, int32_t refresh) {}
 
 #ifdef WL_OUTPUT_DONE_SINCE_VERSION
-static void output_done(void *data, struct wl_output *wl_output) {}
+static void output_done(void *data, wl_output *wl_output) {}
 #endif
 
 #ifdef WL_OUTPUT_SCALE_SINCE_VERSION
-void output_scale(void *data, struct wl_output *wl_output, int32_t factor) {
+void output_scale(void *data, wl_output *wl_output, int32_t factor) {
   /* For now, assume we have one output and adopt its scale unconditionally. */
   /* We should also re-render immediately when scale changes. */
   global_window->pending_scale = factor;
-  LOG_TRACE_WITH(({"window->scale", global_window->scale}), "recieved scale event: {}", factor);
+  LOG_TRACE_WITH(({"window->scale", global_window->scale}),
+                 "recieved scale event: {}", factor);
 }
 #endif
 
 #ifdef WL_OUTPUT_NAME_SINCE_VERSION
-static void output_name(void *data, struct wl_output *wl_output,
-                        const char *name) {}
+static void output_name(void *data, wl_output *wl_output, const char *name) {}
 #endif
 
 #ifdef WL_OUTPUT_DESCRIPTION_SINCE_VERSION
-static void output_description(void *data, struct wl_output *wl_output,
+static void output_description(void *data, wl_output *wl_output,
                                const char *description) {}
 #endif
 
@@ -359,9 +358,8 @@ static const wl_output_listener output_listener = {
 #endif
 };
 
-void registry_handle_global(void *data, struct wl_registry *registry,
-                            uint32_t name, const char *interface,
-                            uint32_t version) {
+void registry_handle_global(void *data, wl_registry *registry, uint32_t name,
+                            const char *interface, uint32_t version) {
   if (strcmp(interface, "wl_compositor") == 0) {
     wl_globals.compositor = static_cast<wl_compositor *>(
         wl_registry_bind(registry, name, &wl_compositor_interface, 3));
@@ -385,41 +383,40 @@ void registry_handle_global(void *data, struct wl_registry *registry,
   }
 }
 
-void registry_handle_global_remove(void *data, struct wl_registry *registry,
+void registry_handle_global_remove(void *data, wl_registry *registry,
                                    uint32_t name) {}
 
 static const wl_registry_listener registry_listener = {
     registry_handle_global, registry_handle_global_remove};
 
 static void layer_surface_configure(void *data,
-                                    struct zwlr_layer_surface_v1 *layer_surface,
+                                    zwlr_layer_surface_v1 *layer_surface,
                                     uint32_t serial, uint32_t width,
                                     uint32_t height) {
   zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
 }
 
 static void layer_surface_closed(void *data,
-                                 struct zwlr_layer_surface_v1 *layer_surface) {}
+                                 zwlr_layer_surface_v1 *layer_surface) {}
 
 static const zwlr_layer_surface_v1_listener layer_surface_listener = {
     /*.configure =*/&layer_surface_configure,
     /*.closed =*/&layer_surface_closed,
 };
 
-struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
-                             int width, int height);
+window *window_create(wl_surface *surface, wl_shm *shm, int width, int height);
 
-void window_resize(struct window *window, int width, int height);
+void window_resize(window *window, int width, int height);
 
-void window_allocate_buffer(struct window *window);
+void window_allocate_buffer(window *window);
 
-void window_destroy(struct window *window);
+void window_destroy(window *window);
 
-void window_commit_buffer(struct window *window);
+void window_commit_buffer(window *window);
 
-void window_get_width_height(struct window *window, int *w, int *h);
+void window_get_width_height(window *window, int *w, int *h);
 
-void window_layer_surface_set_size(struct window *window) {
+void window_layer_surface_set_size(window *window) {
   zwlr_layer_surface_v1_set_size(global_window->layer_surface,
                                  global_window->rectangle.width(),
                                  global_window->rectangle.height());
@@ -431,7 +428,7 @@ static std::map<wl_pointer *, vec2<size_t>> last_known_positions{};
 static void on_pointer_enter(void *data, wl_pointer *pointer,
                              std::uint32_t serial, wl_surface *surface,
                              wl_fixed_t surface_x, wl_fixed_t surface_y) {
-  auto w = reinterpret_cast<struct window *>(data);
+  auto w = reinterpret_cast<window *>(data);
 
   auto pos =
       vec2d(wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
@@ -442,9 +439,9 @@ static void on_pointer_enter(void *data, wl_pointer *pointer,
   llua_mouse_hook(event);
 }
 
-static void on_pointer_leave(void *data, struct wl_pointer *pointer,
-                             std::uint32_t serial, struct wl_surface *surface) {
-  auto w = reinterpret_cast<struct window *>(data);
+static void on_pointer_leave(void *data, wl_pointer *pointer,
+                             std::uint32_t serial, wl_surface *surface) {
+  auto w = reinterpret_cast<window *>(data);
 
   auto pos = last_known_positions[pointer];
   auto pos_abs = w->rectangle.pos() + pos;
@@ -453,10 +450,10 @@ static void on_pointer_leave(void *data, struct wl_pointer *pointer,
   llua_mouse_hook(event);
 }
 
-static void on_pointer_motion(void *data, struct wl_pointer *pointer,
+static void on_pointer_motion(void *data, wl_pointer *pointer,
                               std::uint32_t _time, wl_fixed_t surface_x,
                               wl_fixed_t surface_y) {
-  auto w = reinterpret_cast<struct window *>(data);
+  auto w = reinterpret_cast<window *>(data);
 
   auto pos =
       vec2d(wl_fixed_to_double(surface_x), wl_fixed_to_double(surface_y));
@@ -467,10 +464,10 @@ static void on_pointer_motion(void *data, struct wl_pointer *pointer,
   llua_mouse_hook(event);
 }
 
-static void on_pointer_button(void *data, struct wl_pointer *pointer,
+static void on_pointer_button(void *data, wl_pointer *pointer,
                               std::uint32_t serial, std::uint32_t time,
                               std::uint32_t button, std::uint32_t state) {
-  auto w = reinterpret_cast<struct window *>(data);
+  auto w = reinterpret_cast<window *>(data);
 
   auto pos = last_known_positions[pointer];
   auto pos_abs = w->rectangle.pos() + pos;
@@ -495,11 +492,11 @@ static void on_pointer_button(void *data, struct wl_pointer *pointer,
   llua_mouse_hook(event);
 }
 
-void on_pointer_axis(void *data, struct wl_pointer *pointer, std::uint32_t time,
+void on_pointer_axis(void *data, wl_pointer *pointer, std::uint32_t time,
                      std::uint32_t axis, wl_fixed_t value) {
   if (value == 0) return;
 
-  auto w = reinterpret_cast<struct window *>(data);
+  auto w = reinterpret_cast<window *>(data);
 
   auto pos = last_known_positions[pointer];
   auto pos_abs = w->rectangle.pos() + pos;
@@ -545,8 +542,8 @@ static void seat_capability_listener(void *data, wl_seat *seat,
     }
   }
 }
-static void seat_name_listener(void *data, struct wl_seat *wl_seat,
-                               const char *name) {}
+static void seat_name_listener(void *data, wl_seat *wl_seat, const char *name) {
+}
 
 static const wl_seat_listener seat_listener = {
     .capabilities = seat_capability_listener,
@@ -577,8 +574,7 @@ bool display_output_wayland::initialize() {
         "conky");
   }
 
-  struct wl_surface *surface =
-      wl_compositor_create_surface(wl_globals.compositor);
+  wl_surface *surface = wl_compositor_create_surface(wl_globals.compositor);
   global_window = window_create(surface, wl_globals.shm, 1, 1);
   window_allocate_buffer(global_window);
 
@@ -600,10 +596,10 @@ bool display_output_wayland::initialize() {
   return true;
 }
 
-typedef void (*display_global_handler_t)(struct display *display, uint32_t name,
+typedef void (*display_global_handler_t)(display *display, uint32_t name,
                                          const char *interface,
                                          uint32_t version, void *data);
-typedef void (*display_output_handler_t)(struct output *output, void *data);
+typedef void (*display_output_handler_t)(output *output, void *data);
 
 bool display_output_wayland::shutdown() { return false; }
 
@@ -824,7 +820,7 @@ void display_output_wayland::set_foreground_color(Colour c) {
 }
 
 int display_output_wayland::calc_text_width(const char *s) {
-  struct window *window = global_window;
+  window *window = global_window;
   size_t slen = strlen(s);
   pango_layout_set_text(window->layout, s, slen);
   PangoRectangle margin_rect;
@@ -844,7 +840,7 @@ static void adjust_coords(int &x, int &y) {
 
 void display_output_wayland::draw_string_at(int x, int y, const char *s,
                                             int w) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   y -= pango_fonts[selected_font].metrics.ascent;
   adjust_coords(x, y);
@@ -861,7 +857,7 @@ void display_output_wayland::draw_string_at(int x, int y, const char *s,
 }
 
 void display_output_wayland::set_line_style(int w, bool solid) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   static double dashes[2] = {1.0, 1.0};
   if (solid)
@@ -872,7 +868,7 @@ void display_output_wayland::set_line_style(int w, bool solid) {
 }
 
 void display_output_wayland::set_dashes(char *s) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   size_t len = strlen(s);
   double *dashes = new double[len];
@@ -882,7 +878,7 @@ void display_output_wayland::set_dashes(char *s) {
 }
 
 void display_output_wayland::draw_line(int x1, int y1, int x2, int y2) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   adjust_coords(x1, y1);
   adjust_coords(x2, y2);
@@ -927,7 +923,7 @@ void display_output_wayland::fill_rect(int x, int y, int w, int h) {
 
 void display_output_wayland::draw_arc(int x, int y, int w, int h, int a1,
                                       int a2) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   adjust_coords(x, y);
   cairo_save(cr);
@@ -952,7 +948,7 @@ void display_output_wayland::end_draw_stuff() {
 }
 
 void display_output_wayland::clear_text(int exposures) {
-  struct window *window = global_window;
+  window *window = global_window;
   auto cr = window->cr.get();
   cairo_save(cr);
 
@@ -1049,49 +1045,48 @@ void display_output_wayland::load_fonts(bool utf8) {
 }
 
 struct shm_pool {
-  struct wl_shm_pool *pool;
+  wl_shm_pool *pool;
   size_t size;
   size_t used;
   void *data;
 };
 
 struct shm_surface_data {
-  struct wl_buffer *buffer;
-  struct shm_pool *pool;
+  wl_buffer *buffer;
+  shm_pool *pool;
   bool busy;
 };
 
 static const cairo_user_data_key_t shm_surface_data_key = {0};
 
-static void buffer_release(void *data, struct wl_buffer *wl_buffer) {
-  auto *surface_data = static_cast<struct shm_surface_data *>(data);
+static void buffer_release(void *data, wl_buffer *wl_buffer) {
+  auto *surface_data = static_cast<shm_surface_data *>(data);
   surface_data->busy = false;
 }
 
-static const struct wl_buffer_listener buffer_listener = {buffer_release};
+static const wl_buffer_listener buffer_listener = {buffer_release};
 
-struct wl_buffer *get_buffer_from_cairo_surface(cairo_surface_t *surface) {
-  struct shm_surface_data *data;
+wl_buffer *get_buffer_from_cairo_surface(cairo_surface_t *surface) {
+  shm_surface_data *data;
 
-  data = static_cast<struct shm_surface_data *>(
+  data = static_cast<shm_surface_data *>(
       cairo_surface_get_user_data(surface, &shm_surface_data_key));
 
   return data->buffer;
 }
 
-static void shm_pool_destroy(struct shm_pool *pool);
+static void shm_pool_destroy(shm_pool *pool);
 
 static void shm_surface_data_destroy(void *p) {
-  struct shm_surface_data *data = static_cast<struct shm_surface_data *>(p);
+  shm_surface_data *data = static_cast<shm_surface_data *>(p);
   wl_buffer_destroy(data->buffer);
   if (data->pool) shm_pool_destroy(data->pool);
 
   delete data;
 }
 
-static struct wl_shm_pool *make_shm_pool(struct wl_shm *shm, int size,
-                                         void **data) {
-  struct wl_shm_pool *pool;
+static wl_shm_pool *make_shm_pool(wl_shm *shm, int size, void **data) {
+  wl_shm_pool *pool;
   int fd;
 
   fd = os_create_anonymous_file(size);
@@ -1115,8 +1110,8 @@ static struct wl_shm_pool *make_shm_pool(struct wl_shm *shm, int size,
   return pool;
 }
 
-static struct shm_pool *shm_pool_create(struct wl_shm *shm, size_t size) {
-  struct shm_pool *pool = new struct shm_pool;
+static shm_pool *shm_pool_create(wl_shm *shm, size_t size) {
+  shm_pool *pool = new shm_pool;
 
   if (!pool) return NULL;
 
@@ -1132,8 +1127,7 @@ static struct shm_pool *shm_pool_create(struct wl_shm *shm, size_t size) {
   return pool;
 }
 
-static void *shm_pool_allocate(struct shm_pool *pool, size_t size,
-                               int *offset) {
+static void *shm_pool_allocate(shm_pool *pool, size_t size, int *offset) {
   if (pool->used + size > pool->size) return NULL;
 
   *offset = pool->used;
@@ -1143,7 +1137,7 @@ static void *shm_pool_allocate(struct shm_pool *pool, size_t size,
 }
 
 /* destroy the pool. this does not unmap the memory though */
-static void shm_pool_destroy(struct shm_pool *pool) {
+static void shm_pool_destroy(shm_pool *pool) {
   munmap(pool->data, pool->size);
   wl_shm_pool_destroy(pool->pool);
   delete pool;
@@ -1162,15 +1156,15 @@ static int data_length_for_shm_surface(rect<size_t> *rect, int scale) {
 }
 
 static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
-    void *none, rect<size_t> *rectangle, struct shm_pool *pool, int scale) {
-  struct shm_surface_data *data;
+    void *none, rect<size_t> *rectangle, shm_pool *pool, int scale) {
+  shm_surface_data *data;
   uint32_t format;
   cairo_surface_t *surface;
   cairo_format_t cairo_format;
   int stride, length, offset;
   void *map;
 
-  data = new struct shm_surface_data;
+  data = new shm_surface_data;
   if (data == NULL) return NULL;
 
   cairo_format = CAIRO_FORMAT_ARGB32; /*or CAIRO_FORMAT_RGB16_565 who knows??*/
@@ -1205,11 +1199,11 @@ static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
   });
 }
 
-void window_allocate_buffer(struct window *window) {
+void window_allocate_buffer(window *window) {
   assert(window->shm != nullptr);
 
   int scale = window->scale;
-  struct shm_pool *pool;
+  shm_pool *pool;
   pool = shm_pool_create(
       window->shm, data_length_for_shm_surface(&window->rectangle, scale) * 2);
   if (!pool) {
@@ -1231,8 +1225,7 @@ void window_allocate_buffer(struct window *window) {
     cairo_surface_set_device_scale(cs, scale, scale);
 
     /* make sure we destroy the pool when the surface is destroyed */
-    struct shm_surface_data *data;
-    data = static_cast<struct shm_surface_data *>(
+    auto data = static_cast<shm_surface_data *>(
         cairo_surface_get_user_data(cs, &shm_surface_data_key));
     data->pool = (i == 1) ? pool : nullptr;
   }
@@ -1262,8 +1255,7 @@ void window_allocate_buffer(struct window *window) {
   window->pango_context = pango_cairo_create_context(window->cr.get());
 }
 
-struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
-                             int width, int height) {
+window *window_create(wl_surface *surface, wl_shm *shm, int width, int height) {
   window *result;
   result = new window();
 
@@ -1278,12 +1270,11 @@ struct window *window_create(struct wl_surface *surface, struct wl_shm *shm,
   return result;
 }
 
-void window_free_buffer(struct window *window) {
+void window_free_buffer(window *window) {
   for (int i = 0; i < 2; ++i) {
     if (!window->shm_surface[i]) continue;
-    auto *data =
-        static_cast<struct shm_surface_data *>(cairo_surface_get_user_data(
-            window->shm_surface[i].get(), &shm_surface_data_key));
+    auto *data = static_cast<shm_surface_data *>(cairo_surface_get_user_data(
+        window->shm_surface[i].get(), &shm_surface_data_key));
     while (data && data->busy) { wl_display_dispatch(global_display); }
   }
   for (int i = 0; i < 2; ++i) { window->shm_surface[i] = nullptr; }
@@ -1296,7 +1287,7 @@ void window_free_buffer(struct window *window) {
   window->private_buffer.reset();
 }
 
-void window_destroy(struct window *window) {
+void window_destroy(window *window) {
   window_free_buffer(window);
   zwlr_layer_surface_v1_destroy(window->layer_surface);
   wl_surface_attach(window->surface, nullptr, 0, 0);
@@ -1307,15 +1298,16 @@ void window_destroy(struct window *window) {
   delete window;
 }
 
-void window_resize(struct window *window, int width, int height) {
-  LOG_TRACE("resizing conky display ({}) to {}x{}", window->rectangle, width, height);
+void window_resize(window *window, int width, int height) {
+  LOG_TRACE("resizing conky display ({}) to {}x{}", window->rectangle, width,
+            height);
   window_free_buffer(window);
   window->rectangle.set_size(width, height);
   window_allocate_buffer(window);
   window_layer_surface_set_size(window);
 }
 
-void window_commit_buffer(struct window *window) {
+void window_commit_buffer(window *window) {
   assert(window->shm_surface[window->current_buffer] != nullptr);
 
   cairo_surface_flush(window->cairo_surface.get());
@@ -1337,17 +1329,17 @@ void window_commit_buffer(struct window *window) {
                     window->rectangle.y(), window->rectangle.width(),
                     window->rectangle.height());
   wl_surface_commit(window->surface);
-  struct shm_surface_data *data = static_cast<struct shm_surface_data *>(
+  shm_surface_data *data = static_cast<shm_surface_data *>(
       cairo_surface_get_user_data(shm_surf, &shm_surface_data_key));
   data->busy = true;
   window->current_buffer = 1 - window->current_buffer;
   auto next_surf = window->shm_surface[window->current_buffer].get();
-  struct shm_surface_data *next_data = static_cast<struct shm_surface_data *>(
+  shm_surface_data *next_data = static_cast<shm_surface_data *>(
       cairo_surface_get_user_data(next_surf, &shm_surface_data_key));
   while (next_data->busy) { wl_display_dispatch(global_display); }
 }
 
-void window_get_width_height(struct window *window, int *w, int *h) {
+void window_get_width_height(window *window, int *w, int *h) {
   *w = window->rectangle.width();
   *h = window->rectangle.height();
 }
