@@ -814,12 +814,11 @@ bool display_output_wayland::main_loop_wait(double t) {
     if ((fixed_size == 0) &&
         (text_size.x() + 2 * border_total != width ||
          text_size.y() + 2 * border_total != height || scale_changed)) {
-      /* clamp text_width to configured maximum */
-      if (maximum_width.get(*state)) {
-        int mw =
-            static_cast<int>(global_window->scale * maximum_width.get(*state));
-        if (mw > 0) { text_size.set_x(std::min(mw, text_size.x())); }
-      }
+      /* clamp text_width to configured maximum; maximum_width is in logical
+       * pixels like text_size, the compositor scale is applied later at the
+       * cairo/viewport level. */
+      int mw = maximum_width.get(*state);
+      if (mw > 0) { text_size.set_x(std::min(mw, text_size.x())); }
 
       /* pending scale will be applied by resizing the window */
       global_window->scale = global_window->pending_scale;
@@ -988,7 +987,6 @@ void display_output_wayland::move_win(int x, int y) {
   // window.y = y;
   // TODO
 }
-float display_output_wayland::get_dpi_scale() { return 1.0; }
 
 void display_output_wayland::end_draw_stuff() {
   window_commit_buffer(global_window);

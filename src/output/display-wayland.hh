@@ -72,7 +72,6 @@ class display_output_wayland : public display_output_base {
   virtual void fill_rect(int, int, int, int);
   virtual void draw_arc(int, int, int, int, int, int);
   virtual void move_win(int, int);
-  virtual float get_dpi_scale();
 
   virtual void end_draw_stuff();
   virtual void clear_text(int);
