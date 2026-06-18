@@ -29,6 +29,8 @@
 
 #include "nvidia_nvml.h"
 
+#include <dlfcn.h>
+
 #include <array>
 #include <charconv>
 #include <cstdint>
@@ -36,7 +38,6 @@
 #include <memory>
 #include <string>
 #include <string_view>
-#include <system_error>
 #include <unordered_map>
 #include <vector>
 
@@ -48,6 +49,7 @@
 void init_nvml();
 
 struct nvml_init {
+  bool init_attempted = false;
   bool is_init = false;
   std::string driver_version = "";
   std::string nvml_version = "";
@@ -71,12 +73,35 @@ struct nvml_init {
 
 static nvml_init init{};
 
+// The bundled NVML stub ships its own nvmlErrorString that returns a multi-line
+// loader banner for codes it doesn't recognize. Resolve the real implementation
+// from the installed driver's libnvidia-ml.so.1 at runtime instead (it's
+// already loaded for the data queries), falling back to the raw error code if
+// it can't be found.
+static std::string nvml_error_string(nvmlReturn_t ret) {
+  using error_string_fn = const char* (*)(nvmlReturn_t);
+  static error_string_fn real_error_string = []() -> error_string_fn {
+    void* handle = dlopen("libnvidia-ml.so.1", RTLD_LAZY);
+    if (handle == nullptr) { return nullptr; }
+    return reinterpret_cast<error_string_fn>(dlsym(handle, "nvmlErrorString"));
+  }();
+
+  if (real_error_string != nullptr) {
+    const char* msg = real_error_string(ret);
+    if (msg != nullptr) { return msg; }
+  }
+  return fmt::format("NVML error code {}", static_cast<int>(ret));
+}
+
 void init_nvml() {
-  if (init.is_init) return;
+  // Only attempt initialization once: a failed nvmlInit must not be retried on
+  // every query, or the NVML stub re-prints its loader banner each tick.
+  if (init.init_attempted) return;
+  init.init_attempted = true;
 
   auto ret = nvmlInit_v2();
   if (ret != NVML_SUCCESS) {
-    LOG_ERROR("Unable to initialize NVML: {}", nvmlErrorString(ret));
+    LOG_ERROR("Unable to initialize NVML: {}", nvml_error_string(ret));
     return;
   }
   init.is_init = true;
@@ -87,9 +112,10 @@ void init_nvml() {
   ret = nvmlSystemGetDriverVersion(init.driver_version.data(), dvsize);
   if (ret != NVML_SUCCESS) {
     LOG_WARNING("Unable to get NVIDIA driver version: {}",
-                nvmlErrorString(ret));
+                nvml_error_string(ret));
     return;
   }
+  init.driver_version.resize(std::strlen(init.driver_version.c_str()));
   LOG_DEBUG("NVIDIA driver version is {}", init.driver_version);
 
   constexpr unsigned int nvmlsize = NVML_SYSTEM_NVML_VERSION_BUFFER_SIZE;
@@ -97,15 +123,17 @@ void init_nvml() {
 
   ret = nvmlSystemGetNVMLVersion(init.nvml_version.data(), nvmlsize);
   if (ret != NVML_SUCCESS) {
-    LOG_WARNING("Unable to get NVML version: {}", nvmlErrorString(ret));
+    LOG_WARNING("Unable to get NVML version: {}", nvml_error_string(ret));
     return;
   }
-  LOG_DEBUG("NVML version is {}", init.nvml_version);
+  init.nvml_version.resize(std::strlen(init.nvml_version.c_str()));
+  LOG_DEBUG_WITH(({"NVIDIA_NVML_VERSION", NVIDIA_NVML_VERSION}),
+                 "NVML version is {}", init.nvml_version);
 
   unsigned int count = 0;
   ret = nvmlDeviceGetCount_v2(&count);
   if (ret != NVML_SUCCESS) {
-    LOG_WARNING("Unable to get number of GPUs: {}", nvmlErrorString(ret));
+    LOG_WARNING("Unable to get number of GPUs: {}", nvml_error_string(ret));
     return;
   }
   LOG_DEBUG("Found {} NVIDIA GPUs", count);
@@ -132,6 +160,7 @@ std::unique_ptr<Device> Device::create(unsigned int gpu_index) {
   device->query_video_freq_min_max();
   device->query_power_limit();
   device->query_mem_total();
+  device->query_num_fans();
 
   return device;
 }
@@ -154,9 +183,10 @@ void Device::query_model_name() {
   this->model_name.is_supported = ret == NVML_SUCCESS;
 
   if (this->model_name.is_supported) {
+    this->model_name.value.resize(std::strlen(this->model_name.value.c_str()));
     LOG_DEBUG("GPU device name is {}", this->model_name.value);
   } else {
-    LOG_DEBUG("GPU device name not supported", this->model_name.value);
+    LOG_DEBUG("GPU device name not supported");
   }
 }
 
@@ -196,7 +226,7 @@ void Device::query_pstate_min_max() {
 
 void Device::query_max_temps_fail_with_info(nvmlReturn_t ret,
                                             const char* info) {
-  LOG_DEBUG("{}: {}", info, nvmlErrorString(ret));
+  LOG_DEBUG("{}: {}", info, nvml_error_string(ret));
 
   this->gpu_shutdown_temp.set_unsupported();
   this->gpu_slowdown_temp.set_unsupported();
@@ -223,27 +253,31 @@ void Device::query_max_temps() {
     documentation says that it will soon be deprecated and/or removed.
    */
 
-  // First get the current temp
+  // The margin + per-domain TLIMIT temperatures (Ada and later) are only
+  // declared by newer NVML headers. Older redists (e.g. ppc64le 12.9.79) lack
+  // them, so feature-detect via the struct version macros and fall back to the
+  // absolute thresholds otherwise.
+#if defined(nvmlTemperature_v1) && defined(nvmlMarginTemperature_v1)
+  // Preferred path (Ada and later): current temp + margin + per-domain TLIMITs.
   nvmlTemperature_t query_temp = {};
   query_temp.version = nvmlTemperature_v1;
   query_temp.sensorType = NVML_TEMPERATURE_GPU;
-  auto ret = nvmlDeviceGetTemperatureV(this->device, &query_temp);
-  if (ret != NVML_SUCCESS) {
-    this->query_max_temps_fail_with_info(ret,
-                                         "Unable to get current temperature");
-    return;
-  }
-  int current = query_temp.temperature;
-
-  // Next get the margin
   nvmlMarginTemperature_t query_margin = {};
   query_margin.version = nvmlMarginTemperature_v1;
-  ret = nvmlDeviceGetMarginTemperature(this->device, &query_margin);
-  if (ret != NVML_SUCCESS) {
-    this->query_max_temps_fail_with_info(
-        ret, "Unable to get current margin temperature");
+
+  auto temp_ret = nvmlDeviceGetTemperatureV(this->device, &query_temp);
+  auto margin_ret = nvmlDeviceGetMarginTemperature(this->device, &query_margin);
+  if (temp_ret != NVML_SUCCESS || margin_ret != NVML_SUCCESS) {
+    // Pre-Ada GPUs (e.g. Turing) don't expose margin/TLIMIT values. Fall back
+    // to the absolute thresholds, which lack the mem/gpu-freq domains.
+    LOG_DEBUG(
+        "Margin temperature unsupported ({}); using temperature threshold",
+        nvml_error_string(margin_ret));
+    this->query_temp_thresholds();
     return;
   }
+
+  int current = query_temp.temperature;
   int margin = query_margin.marginTemperature;
 
   // Now get all the TLIMITs
@@ -257,7 +291,7 @@ void Device::query_max_temps() {
   // gpu_max_tlimit
   queries[3].fieldId = NVML_FI_DEV_TEMPERATURE_GPU_MAX_TLIMIT;
 
-  ret = nvmlDeviceGetFieldValues(this->device, 4, queries);
+  auto ret = nvmlDeviceGetFieldValues(this->device, 4, queries);
   if (ret != NVML_SUCCESS) {
     this->query_max_temps_fail_with_info(ret, "Unable to get TLIMIT values");
     return;
@@ -302,6 +336,38 @@ void Device::query_max_temps() {
   } else {
     this->gpu_freq_throttle_temp.set_unsupported();
   }
+#else
+  // NVML header predates the margin/TLIMIT temperature APIs.
+  this->query_temp_thresholds();
+#endif
+}
+
+// Fallback for pre-Ada GPUs that don't support margin/TLIMIT temperatures.
+// Only the shutdown and slowdown thresholds are available this way.
+void Device::query_temp_thresholds() {
+  unsigned int temp = 0;
+
+  auto ret = nvmlDeviceGetTemperatureThreshold(
+      this->device, NVML_TEMPERATURE_THRESHOLD_SHUTDOWN, &temp);
+  if (ret == NVML_SUCCESS) {
+    this->gpu_shutdown_temp.set(static_cast<int>(temp));
+    LOG_TRACE("gpu_shutdown_temp: {}", this->gpu_shutdown_temp.value);
+  } else {
+    this->gpu_shutdown_temp.set_unsupported();
+  }
+
+  ret = nvmlDeviceGetTemperatureThreshold(
+      this->device, NVML_TEMPERATURE_THRESHOLD_SLOWDOWN, &temp);
+  if (ret == NVML_SUCCESS) {
+    this->gpu_slowdown_temp.set(static_cast<int>(temp));
+    LOG_TRACE("gpu_slowdown_temp: {}", this->gpu_slowdown_temp.value);
+  } else {
+    this->gpu_slowdown_temp.set_unsupported();
+  }
+
+  // These domains have no pre-TLIMIT equivalent.
+  this->mem_throttle_temp.set_unsupported();
+  this->gpu_freq_throttle_temp.set_unsupported();
 }
 
 void Device::get_min_max_clocks(nvmlClockType_t clock,
@@ -316,7 +382,7 @@ void Device::get_min_max_clocks(nvmlClockType_t clock,
   auto ret = nvmlDeviceGetMinMaxClockOfPState(
       this->device, clock, this->pstate_min.value, &min, &max);
   if (ret != NVML_SUCCESS) {
-    LOG_DEBUG("{} is unsupported: {}", min_name, nvmlErrorString(ret));
+    LOG_DEBUG("{} is unsupported: {}", min_name, nvml_error_string(ret));
     out_min->set_unsupported();
   } else {
     out_min->set(min);
@@ -329,7 +395,7 @@ void Device::get_min_max_clocks(nvmlClockType_t clock,
   ret = nvmlDeviceGetMinMaxClockOfPState(this->device, clock,
                                          this->pstate_max.value, &min, &max);
   if (ret != NVML_SUCCESS) {
-    LOG_DEBUG("{} is unsupported: {}", max_name, nvmlErrorString(ret));
+    LOG_DEBUG("{} is unsupported: {}", max_name, nvml_error_string(ret));
     out_max->set_unsupported();
   } else {
     out_max->set(max);
@@ -382,8 +448,12 @@ void Device::query_power_limit() {
   nvmlFieldValue_t query = {};
   query.fieldId = NVML_FI_DEV_POWER_CURRENT_LIMIT;
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
+  // nvmlDeviceGetFieldValues can return NVML_SUCCESS overall while reporting a
+  // per-field error (e.g. the field is unknown to an older driver), in which
+  // case query.value is undefined. Check both.
+  if (ret == NVML_SUCCESS) { ret = query.nvmlReturn; }
   if (ret != NVML_SUCCESS) {
-    LOG_DEBUG("power limit is unsupported");
+    LOG_DEBUG("power limit is unsupported: {}", nvml_error_string(ret));
     this->power_limit.set_unsupported();
     return;
   }
@@ -405,6 +475,24 @@ void Device::query_mem_total() {
   }
 }
 
+void Device::query_num_fans() {
+  if (this->num_fans.was_queried) { return; }
+
+  unsigned int count = 0;
+  auto ret = nvmlDeviceGetNumFans(this->device, &count);
+  if (ret != NVML_SUCCESS) {
+    // Treat an unqueryable fan count as "no fan" so the live getters skip the
+    // per-tick query (which would otherwise return INVALID_ARGUMENT).
+    LOG_DEBUG("Unable to get number of fans ({}); assuming none",
+              nvml_error_string(ret));
+    this->num_fans.set(0);
+    return;
+  }
+
+  this->num_fans.set(count);
+  LOG_DEBUG("GPU has {} fan(s)", count);
+}
+
 Device::MemInfo Device::get_mem_info() const {
   nvmlMemory_v2_t query = {};
   query.version = nvmlMemory_v2;
@@ -419,19 +507,36 @@ Device::MemInfo Device::get_mem_info() const {
 }
 
 int Device::get_gpu_temp() const {
+#if defined(nvmlTemperature_v1)
+  // Preferred versioned query, when both the header declares it and the loaded
+  // driver implements it. Otherwise fall through to the classic API below,
+  // which covers old headers (compile time) and old drivers (runtime).
   nvmlTemperature_t query_temp = {};
   query_temp.version = nvmlTemperature_v1;
   query_temp.sensorType = NVML_TEMPERATURE_GPU;
-  auto ret = nvmlDeviceGetTemperatureV(this->device, &query_temp);
+  if (nvmlDeviceGetTemperatureV(this->device, &query_temp) == NVML_SUCCESS) {
+    return query_temp.temperature;
+  }
+#endif
+
+  // Classic temperature query: deprecated in newer headers in favor of the
+  // versioned API above, but it's the only one available on older headers and
+  // drivers, so the deprecation is expected here.
+  unsigned int temp = 0;
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto ret =
+      nvmlDeviceGetTemperature(this->device, NVML_TEMPERATURE_GPU, &temp);
+#pragma GCC diagnostic pop
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get GPU temperature: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get GPU temperature: {}", nvml_error_string(ret));
       did_warn = true;
     }
     return 0;
   }
-  return query_temp.temperature;
+  return static_cast<int>(temp);
 }
 
 unsigned int Device::get_clock_freq(nvmlClockType_t clock,
@@ -449,7 +554,8 @@ unsigned int Device::get_clock_freq(nvmlClockType_t clock,
   if (ret != NVML_SUCCESS) {
     if (!*did_warn) {
       auto name = names[static_cast<size_t>(clock)];
-      LOG_WARNING("Unable to get {} frequency: {}", name, nvmlErrorString(ret));
+      LOG_WARNING("Unable to get {} frequency: {}", name,
+                  nvml_error_string(ret));
       *did_warn = true;
     }
   }
@@ -482,7 +588,7 @@ unsigned int Device::get_gpu_util() const {
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get GPU utilization: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get GPU utilization: {}", nvml_error_string(ret));
       did_warn = true;
     }
     return 0;
@@ -496,7 +602,8 @@ nvmlPstates_t Device::get_pstate() const {
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get performance state: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get performance state: {}",
+                  nvml_error_string(ret));
       did_warn = true;
     }
   }
@@ -504,6 +611,15 @@ nvmlPstates_t Device::get_pstate() const {
 }
 
 unsigned int Device::get_fan_speed() const {
+  // A device with no addressable fan (e.g. a laptop GPU whose fan is driven by
+  // the chassis) reports zero fans, and querying fan 0 returns
+  // INVALID_ARGUMENT.
+  if (this->num_fans.value == 0) { return 0; }
+
+#if defined(nvmlFanSpeedInfo_v1)
+  // RPM fan speed (nvmlDeviceGetFanSpeedRPM) is only declared by newer NVML
+  // headers; older redists (e.g. ppc64le 12.9.79) lack it. The percentage fan
+  // level remains available via get_fan_level().
   nvmlFanSpeedInfo_t info = {};
   info.version = nvmlFanSpeedInfo_v1;
   info.fan = 0;
@@ -511,11 +627,15 @@ unsigned int Device::get_fan_speed() const {
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get fan speed: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get fan speed: {}", nvml_error_string(ret));
       did_warn = true;
     }
+    return 0;
   }
   return info.speed;
+#else
+  return 0;
+#endif
 }
 
 unsigned int Device::get_fan_level() const {
@@ -525,14 +645,17 @@ unsigned int Device::get_fan_level() const {
   // tolerance fan speed. This value may exceed 100% in certain cases.
 
   // Since when is a percentage a speed?
+  if (this->num_fans.value == 0) { return 0; }
+
   unsigned int level = 0;
   auto ret = nvmlDeviceGetFanSpeed_v2(this->device, 0, &level);
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get fan level: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get fan level: {}", nvml_error_string(ret));
       did_warn = true;
     }
+    return 0;
   }
   return level;
 }
@@ -541,11 +664,12 @@ unsigned int Device::get_power_one_sec_avg() const {
   nvmlFieldValue_t query = {};
   query.fieldId = NVML_FI_DEV_POWER_AVERAGE;
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
+  if (ret == NVML_SUCCESS) { ret = query.nvmlReturn; }
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
       LOG_WARNING("Unable to get power one second average: {}",
-                  nvmlErrorString(ret));
+                  nvml_error_string(ret));
       did_warn = true;
     }
     return 0;
@@ -558,10 +682,11 @@ unsigned int Device::get_power_instant() const {
   nvmlFieldValue_t query = {};
   query.fieldId = NVML_FI_DEV_POWER_INSTANT;
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
+  if (ret == NVML_SUCCESS) { ret = query.nvmlReturn; }
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
     if (!did_warn) {
-      LOG_WARNING("Unable to get power: {}", nvmlErrorString(ret));
+      LOG_WARNING("Unable to get power: {}", nvml_error_string(ret));
       did_warn = true;
     }
     return 0;
@@ -571,8 +696,9 @@ unsigned int Device::get_power_instant() const {
 }
 
 const char* Device::get_architecture_name() const {
-  // This is indexed by the NVML_DEVICE_ARCH_* constants
-  static const char* names[] = {
+  // Indexed by the NVML_DEVICE_ARCH_* constants. std::array (with C++17 CTAD)
+  // gives us a checked size() without hardcoding the length.
+  static constexpr std::array names{
       "Unknown",  // Unknown
       "Unknown",  // Unknown
 
@@ -603,7 +729,12 @@ const char* Device::get_architecture_name() const {
     return names[0];
   }
 
-  if (arch == NVML_DEVICE_ARCH_UNKNOWN) { return names[0]; }
+  // A newer driver may report an architecture beyond this table; treat any
+  // unknown or out-of-range value as "Unknown" rather than reading past the
+  // end.
+  if (arch == NVML_DEVICE_ARCH_UNKNOWN || arch >= names.size()) {
+    return names[0];
+  }
 
   return names[arch];
 }
@@ -612,6 +743,7 @@ void shutdown_nvml() {
   if (init.is_init) {
     (void)nvmlShutdown();
     init.is_init = false;
+    init.init_attempted = false;
     init.driver_version = "";
 
     init.devices.clear();
@@ -1114,7 +1246,7 @@ double get_nvml_percent_value(text_object* obj) {
   auto query = static_cast<ParsedQuery*>(obj->data.opaque);
   auto device = init.get_or_create_device(query->gpu_id);
   if (!device) {
-    LOG_DEBUG("No GPU {} available", query->gpu_id);
+    LOG_DEBUG("No NVIDIA GPU {} available", query->gpu_id);
     return 0;
   }
 
@@ -1202,7 +1334,7 @@ double get_nvml_percent_value(text_object* obj) {
 
       return calc_percent(device->get_power_instant(), limit.value);
     }
-    case QueryAttribute::PowerAvg:
+    case QueryAttribute::PowerAvg: {
       auto limit = device->get_power_limit();
       if (!limit.is_supported) {
         LOG_DEBUG("Unable to get poweravg");
@@ -1210,7 +1342,7 @@ double get_nvml_percent_value(text_object* obj) {
       }
 
       return calc_percent(device->get_power_one_sec_avg(), limit.value);
-      break;
+    }
   }
   return 0;
 }

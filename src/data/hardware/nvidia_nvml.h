@@ -160,11 +160,14 @@ class Device {
 
   DeviceField<uint64_t> mem_total;  // In bytes
 
+  DeviceField<unsigned int> num_fans;
+
   void query_model_name();
   void query_pstate_min_max();
 
   void query_max_temps_fail_with_info(nvmlReturn_t, const char*);
   void query_max_temps();
+  void query_temp_thresholds();
 
   void get_min_max_clocks(nvmlClockType_t, DeviceField<unsigned int>*,
                           const char*, DeviceField<unsigned int>*, const char*);
@@ -175,6 +178,7 @@ class Device {
 
   void query_power_limit();
   void query_mem_total();
+  void query_num_fans();
 
   unsigned int get_clock_freq(nvmlClockType_t, bool*) const;
 };
