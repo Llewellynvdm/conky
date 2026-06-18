@@ -222,17 +222,6 @@ static void wayland_create_window() {
   load_fonts(utf8_mode.get(*state));
   update_text_area(); /* to position text/window on screen */
 
-#ifdef OWN_WINDOW
-  if (own_window.get(*state)) {
-    if (fixed_pos == 0) {
-      // XMoveWindow(display, window.window, window.x, window.y);
-      // TODO
-    }
-
-    // set_transparent_background(window.window);
-  }
-#endif
-
   selected_font = 0;
   update_text_area(); /* to get initial size of the window */
 }
@@ -842,14 +831,6 @@ bool display_output_wayland::main_loop_wait(double t) {
       bounds_changed |= true;
     }
 
-/* move window if it isn't in right position */
-#ifdef POSITION
-    if ((fixed_pos == 0) && (window.x != wx || window.y != wy)) {
-      // XMoveWindow(display, window.window, window.x, window.y);
-      changed++;
-    }
-#endif
-
     /* update struts */
     if (bounds_changed) { window_update_struts(global_window, width, height); }
 
@@ -862,48 +843,7 @@ bool display_output_wayland::main_loop_wait(double t) {
   }
   wl_display_flush(global_display);
 
-#ifdef INPUT
-#ifdef X_EVENT
-  case ButtonPress:
-    if (own_window.get(*state)) {
-      /* if an ordinary window with decorations */
-      if ((own_window_type.get(*state) == TYPE_NORMAL &&
-           !TEST_HINT(own_window_hints.get(*state), HINT_UNDECORATED)) ||
-          own_window_type.get(*state) == TYPE_DESKTOP) {
-        /* allow conky to hold input focus. */
-        break;
-      }
-      /* forward the click to the desktop window */
-      XUngrabPointer(display, ev.xbutton.time);
-      ev.xbutton.window = window.desktop;
-      ev.xbutton.x = ev.xbutton.x_root;
-      ev.xbutton.y = ev.xbutton.y_root;
-      XSendEvent(display, ev.xbutton.window, False, ButtonPressMask, &ev);
-      XSetInputFocus(display, ev.xbutton.window, RevertToParent,
-                     ev.xbutton.time);
-    }
-    break;
-
-  case ButtonRelease:
-    if (own_window.get(*state)) {
-      /* if an ordinary window with decorations */
-      if ((own_window_type.get(*state) == TYPE_NORMAL) &&
-          !TEST_HINT(own_window_hints.get(*state), HINT_UNDECORATED)) {
-        /* allow conky to hold input focus. */
-        break;
-      }
-      /* forward the release to the desktop window */
-      ev.xbutton.window = window.desktop;
-      ev.xbutton.x = ev.xbutton.x_root;
-      ev.xbutton.y = ev.xbutton.y_root;
-      XSendEvent(display, ev.xbutton.window, False, ButtonReleaseMask, &ev);
-    }
-    break;
-#endif /*X_EVENT*/
-#endif /*INPUT*/
-
-    // handled
-    return true;
+  return true;
 }
 
 void display_output_wayland::sigterm_cleanup() {}
