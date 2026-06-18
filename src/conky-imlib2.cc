@@ -24,6 +24,7 @@
 #include "conky-imlib2.h"
 
 #include "common.h"
+#include "conky.h"
 #include "content/text_object.h"
 #include "logging.h"
 #include "output/display-output.hh"
@@ -63,50 +64,41 @@ conky::range_config_setting<unsigned int> imlib_cache_flush_interval(
 conky::simple_config_setting<bool> imlib_draw_blended("draw_blended", true,
                                                       true);
 
+conky::range_config_setting<unsigned long> imlib_cache_size(
+    "imlib_cache_size", 0, std::numeric_limits<unsigned long>::max(),
+    4096 * 1024, true);
+
 namespace {
 Imlib_Context context;
 
 unsigned int cimlib_cache_flush_last = 0;
 }  // namespace
 
-void imlib_cache_size_setting::lua_setter(lua::state &l, bool init) {
-  lua::stack_sentry s(l, -2);
+void cimlib_init() {
+  if (display == nullptr || window.visual == nullptr) { return; }
 
-  Base::lua_setter(l, init);
-
-  if (display == nullptr || window.visual == nullptr) {
-    ++s;
-    return;
-  }
-
-  if (init && out_to_x.get(l)) {
-    image_list_start = image_list_end = nullptr;
-    context = imlib_context_new();
-    imlib_context_push(context);
-    imlib_set_cache_size(do_convert(l, -1).first);
-    /* set the maximum number of colors to allocate for 8bpp and less to 256 */
-    imlib_set_color_usage(256);
-    /* dither for depths < 24bpp */
-    imlib_context_set_dither(1);
-    /* set the display , visual, colormap and drawable we are using */
-    imlib_context_set_display(display);
-    imlib_context_set_visual(window.visual);
-    imlib_context_set_colormap(window.colourmap);
-    imlib_context_set_drawable(window.drawable);
-  }
-
-  ++s;
+  image_list_start = image_list_end = nullptr;
+  context = imlib_context_new();
+  imlib_context_push(context);
+  imlib_set_cache_size(imlib_cache_size.get(*state));
+  /* set the maximum number of colors to allocate for 8bpp and less to 256 */
+  imlib_set_color_usage(256);
+  /* dither for depths < 24bpp */
+  imlib_context_set_dither(1);
+  /* set the display , visual, colormap and drawable we are using */
+  imlib_context_set_display(display);
+  imlib_context_set_visual(window.visual);
+  imlib_context_set_colormap(window.colourmap);
+  imlib_context_set_drawable(window.drawable);
 }
 
-void imlib_cache_size_setting::cleanup(lua::state &l) {
-  lua::stack_sentry s(l, -1);
-
-  if (out_to_x.get(l)) {
-    cimlib_cleanup();
-    imlib_context_disconnect_display();
-    imlib_context_pop();
-    imlib_context_free(context);
-  }
+void cimlib_deinit() {
+  if (context == nullptr) { return; }
+  cimlib_cleanup();
+  imlib_context_disconnect_display();
+  imlib_context_pop();
+  imlib_context_free(context);
+  context = nullptr;
 }
 
 void cimlib_cleanup() {
@@ -301,5 +293,3 @@ void cimlib_render(int x, int y, int width, int height, uint32_t flush_interval,
 void print_image_callback(struct text_object *obj, char *, unsigned int) {
   cimlib_add_image(obj->data.s);
 }
-
-imlib_cache_size_setting imlib_cache_size;

@@ -188,18 +188,6 @@ void print_mouse_speed(struct text_object *, char *, unsigned int);
 
 extern conky::simple_config_setting<alignment> text_alignment;
 
-namespace priv {
-class own_window_setting : public conky::simple_config_setting<bool> {
-  typedef conky::simple_config_setting<bool> Base;
-
- protected:
-  virtual void lua_setter(lua::state &l, bool init);
-
- public:
-  own_window_setting() : Base("own_window", false, false) {}
-};
-}  // namespace priv
-
 extern conky::simple_config_setting<int> head_index;
 extern priv::colour_setting default_shade_color;
 extern priv::colour_setting default_outline_color;
@@ -222,7 +210,7 @@ extern conky::simple_config_setting<uint16_t, window_hints_traits>
 #endif /* OWN_WINDOW || BUILD_WAYLAND */
 
 #if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
-extern priv::own_window_setting own_window;
+extern conky::simple_config_setting<bool> own_window;
 /// @brief X11 window title; Wayland XDG Shell toplevel title.
 extern conky::simple_config_setting<std::string> own_window_title;
 /// @brief X11 window class; Wayland XDG Shell app_id.

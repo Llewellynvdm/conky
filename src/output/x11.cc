@@ -109,6 +109,21 @@ xcb_errors_context_t *xcb_errors_ctx;
 /* Window stuff */
 struct conky_x11_window window;
 
+/* Config settings (declared in x11-settings.h / gui.h) */
+conky::simple_config_setting<std::string> display_name("display", std::string(),
+                                                       false);
+conky::simple_config_setting<int> head_index("xinerama_head", 0, true);
+conky::simple_config_setting<bool> out_to_x("out_to_x", true, false);
+#ifdef BUILD_XFT
+conky::simple_config_setting<bool> use_xft("use_xft", false, false);
+#endif
+conky::simple_config_setting<bool> forced_redraw("forced_redraw", false, false);
+#ifdef BUILD_XDBE
+conky::simple_config_setting<bool> use_xdbe("double_buffer", false, false);
+#else
+conky::simple_config_setting<bool> use_xpmdb("double_buffer", false, false);
+#endif
+
 /* local prototypes */
 static Window find_desktop_window(Window *p_root, Window *p_desktop);
 static Window find_desktop_window_impl(Window win, int w, int h);
@@ -288,6 +303,49 @@ void deinit_x11() {
     XCloseDisplay(display);
     display = nullptr;
   }
+}
+
+bool x11_set_up_double_buffer(lua::state &l) {
+#ifdef BUILD_XDBE
+  // double_buffer makes no sense when not drawing to X
+  if (!out_to_x.get(l) || !display || !window.window) { return false; }
+
+  int major, minor;
+  if (XdbeQueryExtension(display, &major, &minor) == 0) {
+    LOG_ERROR("no compatible double buffer extension found");
+    return false;
+  }
+
+  window.back_buffer =
+      XdbeAllocateBackBufferName(display, window.window, XdbeBackground);
+  if (window.back_buffer != None) {
+    window.drawable = window.back_buffer;
+  } else {
+    LOG_ERROR("failed to allocate xdbe back buffer");
+    return false;
+  }
+
+  XFlush(display);
+  return true;
+#else
+  // double_buffer makes no sense when not drawing to X
+  if (!out_to_x.get(l)) return false;
+
+  unsigned int depth = window.color_depth != 0 ? window.color_depth
+                                               : DefaultDepth(display, screen);
+  window.back_buffer =
+      XCreatePixmap(display, window.window, window.geometry.width() + 1,
+                    window.geometry.height() + 1, depth);
+  if (window.back_buffer != None) {
+    window.drawable = window.back_buffer;
+  } else {
+    LOG_ERROR("failed to allocate pixmap back buffer");
+    return false;
+  }
+
+  XFlush(display);
+  return true;
+#endif
 }
 
 // Source: dunst
@@ -486,10 +544,8 @@ void destroy_window() {
   window = conky_x11_window{};
 }
 
-void x11_init_window(lua::state &l, bool own) {
-  auto _scope = LOG_SCOPE("x11_init_window", {{"own", own}});
-  // own is unused if OWN_WINDOW is not defined
-  (void)own;
+void x11_init_window(lua::state &l) {
+  auto _scope = LOG_SCOPE("x11_init_window");
 
   window.root = VRootWindow(display, screen);
   if (window.root == None) {
@@ -503,7 +559,7 @@ void x11_init_window(lua::state &l, bool own) {
   window.colourmap = DefaultColormap(display, screen);
 
 #ifdef OWN_WINDOW
-  if (own) {
+  if (own_window.get(l)) {
     int flags = CWOverrideRedirect | CWBackingStore;
     window.color_depth = CopyFromParent;
 
@@ -846,7 +902,7 @@ void x11_init_window(lua::state &l, bool own) {
 #ifdef BUILD_MOUSE_EVENTS
     selected_events.clear(XI_HierarchyChanged);
 
-    if (!own && !conky::lua_mouse_hook.get(l).empty()) {
+    if (!own_window.get(l) && !conky::lua_mouse_hook.get(l).empty()) {
       LOG_WARNING(
           "registering `lua_mouse_hook` when `own_window = false` means conky "
           "has to steal root events; WM desktop interactivity will likely seem "
@@ -863,7 +919,7 @@ void x11_init_window(lua::state &l, bool own) {
     }
 #endif
 
-    if (own) {
+    if (own_window.get(l)) {
       selected_events.clear_all();
       selected_events.set(XI_ButtonPress);
       selected_events.set(XI_ButtonRelease);

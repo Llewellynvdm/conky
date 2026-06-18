@@ -345,7 +345,6 @@ if(BUILD_X11)
   set(x11
     output/display-x11.cc
     output/display-x11.hh
-    lua/x11-settings.cc
     lua/x11-settings.h
     output/x11-color.cc
     output/x11.cc

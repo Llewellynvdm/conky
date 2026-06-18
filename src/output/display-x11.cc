@@ -234,6 +234,31 @@ bool display_output_x11::detect() {
 }
 
 bool display_output_x11::initialize() {
+  // X global state is set up here rather than in lua config setters, so the
+  // settings stay side-effect-free. Order mirrors the settings: open the
+  // display, create the window, set up double buffering, then imlib.
+  init_x11();
+  x11_init_window(*state);
+
+#if defined(BUILD_XDBE)
+  auto &double_buffer = use_xdbe;
+#else
+  auto &double_buffer = use_xpmdb;
+#endif
+  if (double_buffer.get(*state)) {
+    if (!x11_set_up_double_buffer(*state)) {
+      // double buffering unavailable; reflect that in the value consumers read
+      state->pushboolean(false);
+      double_buffer.lua_set(*state);
+    }
+    LOG_INFO("drawing to {} buffer",
+             double_buffer.get(*state) ? "double" : "single");
+  }
+
+#ifdef BUILD_IMLIB2
+  cimlib_init();
+#endif /* BUILD_IMLIB2 */
+
   X11_create_window();
 #ifdef BUILD_LUA_CAIRO_XLIB
   update_surface();
@@ -242,6 +267,9 @@ bool display_output_x11::initialize() {
 }
 
 bool display_output_x11::shutdown() {
+#ifdef BUILD_IMLIB2
+  cimlib_deinit();
+#endif /* BUILD_IMLIB2 */
   deinit_x11();
   return true;
 }

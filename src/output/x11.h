@@ -152,7 +152,11 @@ void get_x11_desktop_info(Display *current_display, Atom atom);
 /// Prints out a warning if user is using one of sessions that are known not to
 /// work.
 void set_struts();
-void x11_init_window(lua::state &l, bool own);
+void x11_init_window(lua::state &l);
+/// Allocates the double-buffer back buffer (XDBE, or pixmap fallback); call
+/// once the X window exists. Returns false when double buffering is
+/// unavailable.
+bool x11_set_up_double_buffer(lua::state &l);
 void deinit_x11();
 
 /// @brief Forwards argument event to the top-most window at event positon that

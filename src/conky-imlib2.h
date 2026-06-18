@@ -44,21 +44,13 @@ void cimlib_render(int x, int y, int width, int height, uint32_t flush_interval,
                    bool draw_blended);
 void cimlib_cleanup(void);
 
+/// Creates the imlib context and binds it to the X display/visual/colormap/
+/// drawable. Call once, after the X window exists.
+void cimlib_init();
+/// Tears down the imlib context and cached images.
+void cimlib_deinit();
+
 void print_image_callback(struct text_object *, char *, unsigned int);
-
-class imlib_cache_size_setting
-    : public conky::range_config_setting<unsigned long> {
-  typedef conky::range_config_setting<unsigned long> Base;
-
- protected:
-  virtual void lua_setter(lua::state &l, bool init);
-  virtual void cleanup(lua::state &l);
-
- public:
-  imlib_cache_size_setting()
-      : Base("imlib_cache_size", 0, std::numeric_limits<unsigned long>::max(),
-             4096 * 1024, true) {}
-};
 
 extern conky::range_config_setting<unsigned int> imlib_cache_flush_interval;
 extern conky::simple_config_setting<bool> imlib_draw_blended;

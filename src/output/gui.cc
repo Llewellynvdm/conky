@@ -52,11 +52,6 @@ conky::absolute_rect<int> workarea;
 /* Window stuff */
 char window_created = 0;
 
-/* local prototypes */
-#ifdef BUILD_X11
-void x11_init_window(lua::state &l, bool own);
-#endif /*BUILD_X11*/
-
 /********************* <SETTINGS> ************************/
 
 bool out_to_gui(lua::state &l) {
@@ -69,40 +64,6 @@ bool out_to_gui(lua::state &l) {
 #endif /* BUILD_WAYLAND */
   return to_gui;
 }
-
-namespace priv {
-void own_window_setting::lua_setter(lua::state &l, bool init) {
-  lua::stack_sentry s(l, -2);
-
-  Base::lua_setter(l, init);
-
-  if (init) {
-    if (do_convert(l, -1).first) {
-#if !defined(OWN_WINDOW) && !defined(BUILD_WAYLAND)
-      LOG_WARNING(
-          "own_window support disabled at compile time, ignoring setting");
-      l.pop();
-      l.pushboolean(false);
-#endif
-    }
-
-    if (out_to_gui(l)) {
-#ifdef BUILD_X11
-      // X11 window setup only applies when actually drawing to X; a
-      // Wayland-only run in a combined build must not touch the (uninitialized)
-      // X display.
-      if (out_to_x.get(l)) { x11_init_window(l, do_convert(l, -1).first); }
-#endif /*BUILD_X11*/
-    } else {
-      // own_window makes no sense when not drawing to a GUI output
-      l.pop();
-      l.pushboolean(false);
-    }
-  }
-
-  ++s;
-}
-}  // namespace priv
 
 template <>
 conky::lua_traits<alignment>::Map conky::lua_traits<alignment>::map = {
@@ -257,6 +218,6 @@ Colour get_background_colour_preference(lua::state &l) {
 }
 #endif /* OWN_WINDOW || BUILD_WAYLAND */
 
-priv::own_window_setting own_window;
+conky::simple_config_setting<bool> own_window("own_window", false, false);
 
 /******************** </SETTINGS> ************************/
