@@ -369,6 +369,8 @@ if(BUILD_WAYLAND)
   set(wl_sources
     output/wl.cc
     output/wl.h
+    output/wl-shell.cc
+    output/wl-shell.h
     output/display-wayland.cc
     output/display-wayland.hh
     xdg-shell-protocol.c

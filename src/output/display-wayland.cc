@@ -40,19 +40,18 @@
 #include <sys/timerfd.h>
 #include <unistd.h>
 
-#include <wayland-client-protocol.h>
 #include <fractional-scale-client-protocol.h>
 #include <viewporter-client-protocol.h>
+#include <wayland-client-protocol.h>
 #include <wlr-layer-shell-client-protocol.h>
 #include <xdg-shell-client-protocol.h>
 
 #include <cerrno>
 #include <cmath>
+#include <csignal>
 #include <cstdint>
 #include <cstring>
-#include <iostream>
 #include <memory>
-#include <sstream>
 
 #include "../conky.h"
 #include "../geometry.h"
@@ -60,6 +59,7 @@
 #include "../lua/llua.h"
 #include "display-output.hh"
 #include "gui.h"
+#include "wl-shell.h"
 
 #include "../lua/fonts.h"
 
@@ -174,6 +174,10 @@ int get_border_total();
 extern conky::range_config_setting<int> maximum_width;
 extern Colour current_color;
 
+/* set from the main loop's signal handler; used to request a clean shutdown
+ * when the compositor closes our shell surface. */
+extern volatile sig_atomic_t g_sigterm_pending;
+
 /* for pango_fonts */
 struct pango_font {
   PangoFontDescription *desc;
@@ -260,7 +264,8 @@ struct window {
   rect<size_t> rectangle;
   wl_shm *shm;
   wl_surface *surface;
-  zwlr_layer_surface_v1 *layer_surface;
+  /// @brief Shell role (layer-shell or xdg-shell) bound to @ref surface.
+  std::unique_ptr<conky::shell_surface> shell;
   /// @brief Surface viewport mapping the device-pixel buffer onto the logical
   /// surface size; null when the compositor lacks wp_viewporter.
   wp_viewport *viewport = nullptr;
@@ -371,8 +376,9 @@ static const wl_output_listener output_listener = {
 #endif
 };
 
-static void fractional_scale_preferred(
-    void *data, wp_fractional_scale_v1 *fractional_scale, uint32_t scale) {
+static void fractional_scale_preferred(void *data,
+                                       wp_fractional_scale_v1 *fractional_scale,
+                                       uint32_t scale) {
   // scale is expressed in 1/120ths of the logical pixel size.
   global_window->pending_scale = static_cast<float>(scale) / 120.0f;
   LOG_TRACE_WITH(({"window->scale", global_window->scale}),
@@ -421,21 +427,6 @@ void registry_handle_global_remove(void *data, wl_registry *registry,
 static const wl_registry_listener registry_listener = {
     registry_handle_global, registry_handle_global_remove};
 
-static void layer_surface_configure(void *data,
-                                    zwlr_layer_surface_v1 *layer_surface,
-                                    uint32_t serial, uint32_t width,
-                                    uint32_t height) {
-  zwlr_layer_surface_v1_ack_configure(layer_surface, serial);
-}
-
-static void layer_surface_closed(void *data,
-                                 zwlr_layer_surface_v1 *layer_surface) {}
-
-static const zwlr_layer_surface_v1_listener layer_surface_listener = {
-    /*.configure =*/&layer_surface_configure,
-    /*.closed =*/&layer_surface_closed,
-};
-
 window *window_create(wl_surface *surface, wl_shm *shm, int width, int height);
 
 void window_resize(window *window, int width, int height);
@@ -447,12 +438,6 @@ void window_destroy(window *window);
 void window_commit_buffer(window *window);
 
 void window_get_width_height(window *window, int *w, int *h);
-
-void window_layer_surface_set_size(window *window) {
-  zwlr_layer_surface_v1_set_size(global_window->layer_surface,
-                                 global_window->rectangle.width(),
-                                 global_window->rectangle.height());
-}
 
 /// @brief Maps the configured `own_window_type` onto a wlr-layer-shell layer.
 ///
@@ -472,20 +457,18 @@ static zwlr_layer_shell_v1_layer layer_for_window_type() {
   }
 }
 
-/// @brief Updates the layer surface anchor, margin and exclusive zone.
+/// @brief Updates the shell surface anchoring and reserved space (struts).
 ///
 /// Docks and panels reserve a strip along a screen edge so other surfaces
-/// (e.g. maximized windows) don't overlap them. The wlr-layer-shell exclusive
-/// zone is only honoured when the surface is anchored to a single edge, so
-/// collapse the alignment to one dominant edge and reserve the size
-/// perpendicular to it; the exclusive zone includes the gap/margin from the
-/// edge. Other window types keep the alignment-derived anchor and reserve no
-/// space.
+/// (e.g. maximized windows) don't overlap them; other window types anchor
+/// where they're aligned and reserve nothing.
 ///
-/// @param window window whose layer surface should be updated
+/// @param window window whose shell surface should be updated
 /// @param width current window width in surface-local pixels
 /// @param height current window height in surface-local pixels
 static void window_update_struts(window *window, int width, int height) {
+  if (!window->shell->supports_struts()) { return; }
+
   LOG_DEBUG("defining struts");
 
   alignment text_align = text_alignment.get(*state);
@@ -495,55 +478,34 @@ static void window_update_struts(window *window, int width, int height) {
   window_type type = own_window_type.get(*state);
   bool reserve_space = type == window_type::DOCK || type == window_type::PANEL;
 
-  int anchor = 0;
+  conky::screen_edge edge = conky::screen_edge::NONE;
   int exclusive_zone = 0;
 
   if (reserve_space) {
+    // Reservation only works against a single edge, so collapse the alignment
+    // to one dominant edge and reserve the perpendicular size (plus margin).
     if (valign == axis_align::START) {
-      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+      edge = conky::screen_edge::TOP;
       exclusive_zone = height + gap_y.get(*state);
     } else if (valign == axis_align::END) {
-      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+      edge = conky::screen_edge::BOTTOM;
       exclusive_zone = height + gap_y.get(*state);
     } else if (halign == axis_align::START) {
-      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+      edge = conky::screen_edge::LEFT;
       exclusive_zone = width + gap_x.get(*state);
     } else if (halign == axis_align::END) {
-      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+      edge = conky::screen_edge::RIGHT;
       exclusive_zone = width + gap_x.get(*state);
     }
     // A fully centered (mm) dock/panel has no edge to reserve against, so the
     // exclusive zone stays zero.
   } else {
-    switch (valign) {
-      case axis_align::START:
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
-        break;
-      case axis_align::END:
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
-        break;
-      default:
-        break;
-    }
-    switch (halign) {
-      case axis_align::START:
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
-        break;
-      case axis_align::END:
-        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-        break;
-      default:
-        break;
-    }
-    // middle anchor alignment is the default and requires no special handling.
+    // Normal windows anchor exactly where they're aligned.
+    edge = static_cast<conky::screen_edge>(*text_align);
   }
 
-  zwlr_layer_surface_v1_set_anchor(window->layer_surface, anchor);
-  zwlr_layer_surface_v1_set_margin(window->layer_surface, gap_y.get(*state),
-                                   gap_x.get(*state), gap_y.get(*state),
-                                   gap_x.get(*state));
-  zwlr_layer_surface_v1_set_exclusive_zone(window->layer_surface,
-                                           exclusive_zone);
+  window->shell->reserve_space(edge, exclusive_zone, gap_x.get(*state),
+                               gap_y.get(*state));
 }
 
 #ifdef BUILD_MOUSE_EVENTS
@@ -691,23 +653,50 @@ bool display_output_wayland::initialize() {
   wl_registry_add_listener(wl_globals.registry, &registry_listener, NULL);
 
   wl_display_roundtrip(global_display);
-  if (wl_globals.layer_shell == nullptr) {
-    // TODO: Implement OWN_WINDOW and XDG Shell support
-    SYSTEM_ERR(
-        "compositor doesn't support wlr-layer-shell-unstable-v1, can't run "
-        "conky");
-  }
 
   wl_surface *surface = wl_compositor_create_surface(wl_globals.compositor);
   global_window = window_create(surface, wl_globals.shm, 1, 1);
   window_allocate_buffer(global_window);
 
-  global_window->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
-      wl_globals.layer_shell, global_window->surface, nullptr,
-      layer_for_window_type(), "conky_namespace");
-  window_layer_surface_set_size(global_window);
-  zwlr_layer_surface_v1_add_listener(global_window->layer_surface,
-                                     &layer_surface_listener, nullptr);
+  // An own_window of normal/utility type becomes a regular compositor-managed
+  // toplevel; everything else (desktop/dock/panel, or no own_window) mounts as
+  // a layer surface, falling back to an xdg toplevel when the compositor lacks
+  // wlr-layer-shell.
+  window_type type = own_window_type.get(*state);
+  bool want_toplevel = own_window.get(*state) && (type == window_type::NORMAL ||
+                                                  type == window_type::UTILITY);
+  auto on_close = []() { g_sigterm_pending = 1; };
+
+  if (!want_toplevel && wl_globals.layer_shell != nullptr) {
+    global_window->shell =
+        conky::create_shell_surface<conky::layer_shell_surface>({
+            on_close,
+            global_window->surface,
+            wl_globals.layer_shell,
+            static_cast<uint32_t>(layer_for_window_type()),
+            "conky",
+        });
+  } else {
+    if (!want_toplevel) {
+      LOG_WARNING(
+          "compositor lacks wlr-layer-shell; falling back to an xdg-shell "
+          "toplevel (desktop/dock/panel space reservation unavailable)");
+    }
+    if (wl_globals.shell == nullptr) {
+      SYSTEM_ERR("compositor supports neither wlr-layer-shell nor xdg-shell");
+      return false;
+    }
+    global_window->shell =
+        conky::create_shell_surface<conky::xdg_shell_surface>({
+            on_close,
+            global_window->surface,
+            wl_globals.shell,
+            own_window_title.get(*state),
+            own_window_class.get(*state),
+        });
+  }
+  global_window->shell->set_size(global_window->rectangle.width(),
+                                 global_window->rectangle.height());
 
 #ifdef BUILD_MOUSE_EVENTS
   wl_seat_add_listener(wl_globals.seat, &seat_listener, global_window);
@@ -1326,8 +1315,9 @@ window *window_create(wl_surface *surface, wl_shm *shm, int width, int height) {
         wp_viewporter_get_viewport(wl_globals.viewporter, surface);
   }
   if (wl_globals.fractional_scale_manager != nullptr) {
-    result->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(
-        wl_globals.fractional_scale_manager, surface);
+    result->fractional_scale =
+        wp_fractional_scale_manager_v1_get_fractional_scale(
+            wl_globals.fractional_scale_manager, surface);
     wp_fractional_scale_v1_add_listener(result->fractional_scale,
                                         &fractional_scale_listener, nullptr);
   }
@@ -1358,7 +1348,8 @@ void window_destroy(window *window) {
     wp_fractional_scale_v1_destroy(window->fractional_scale);
   }
   if (window->viewport) { wp_viewport_destroy(window->viewport); }
-  zwlr_layer_surface_v1_destroy(window->layer_surface);
+  // Destroy the shell role before the wl_surface it is bound to.
+  window->shell.reset();
   wl_surface_attach(window->surface, nullptr, 0, 0);
   wl_surface_commit(window->surface);
   wl_display_roundtrip(global_display);
@@ -1373,7 +1364,8 @@ void window_resize(window *window, int width, int height) {
   window_free_buffer(window);
   window->rectangle.set_size(width, height);
   window_allocate_buffer(window);
-  window_layer_surface_set_size(window);
+  window->shell->set_size(window->rectangle.width(),
+                          window->rectangle.height());
 }
 
 void window_commit_buffer(window *window) {

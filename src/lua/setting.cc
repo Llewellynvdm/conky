@@ -84,6 +84,9 @@ priv::config_setting_base *get_setting(lua::state &l, int index) {
 const std::vector<std::string> settings_ordering{
     "display",
     "out_to_x",
+    // out_to_wayland must precede own_window: own_window's setter checks the
+    // active GUI output (out_to_gui) and disables itself when none is set yet.
+    "out_to_wayland",
     "use_xft",
     "font",
     "font0",
@@ -123,7 +126,6 @@ const std::vector<std::string> settings_ordering{
     "own_window_colour",
     "own_window",
     "double_buffer",
-    "out_to_wayland",
     "imlib_cache_size",
 };
 

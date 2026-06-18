@@ -78,7 +78,7 @@ void own_window_setting::lua_setter(lua::state &l, bool init) {
 
   if (init) {
     if (do_convert(l, -1).first) {
-#ifndef OWN_WINDOW
+#if !defined(OWN_WINDOW) && !defined(BUILD_WAYLAND)
       LOG_WARNING(
           "own_window support disabled at compile time, ignoring setting");
       l.pop();
@@ -88,10 +88,13 @@ void own_window_setting::lua_setter(lua::state &l, bool init) {
 
     if (out_to_gui(l)) {
 #ifdef BUILD_X11
-      x11_init_window(l, do_convert(l, -1).first);
+      // X11 window setup only applies when actually drawing to X; a
+      // Wayland-only run in a combined build must not touch the (uninitialized)
+      // X display.
+      if (out_to_x.get(l)) { x11_init_window(l, do_convert(l, -1).first); }
 #endif /*BUILD_X11*/
     } else {
-      // own_window makes no sense when not drawing to X
+      // own_window makes no sense when not drawing to a GUI output
       l.pop();
       l.pushboolean(false);
     }
@@ -175,7 +178,7 @@ std::pair<uint16_t, bool> window_hints_traits::convert(
 }
 #endif
 
-#ifdef OWN_WINDOW
+#if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
 namespace {
 // used to set the default value for own_window_title
 std::string gethostnamecxx() {
@@ -183,7 +186,7 @@ std::string gethostnamecxx() {
   return info.uname_s.nodename;
 }
 }  // namespace
-#endif /* OWN_WINDOW */
+#endif /* OWN_WINDOW || BUILD_WAYLAND */
 
 /*
  * The order of these settings cannot be completely arbitrary. Some of them
@@ -212,12 +215,12 @@ conky::range_config_setting<int> border_width("border_width", 0,
                                               std::numeric_limits<int>::max(),
                                               1, true);
 
-#ifdef OWN_WINDOW
+#if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
 conky::simple_config_setting<std::string> own_window_title(
     "own_window_title", PACKAGE_NAME " (" + gethostnamecxx() + ")", false);
 conky::simple_config_setting<std::string> own_window_class("own_window_class",
                                                            PACKAGE_NAME, false);
-#endif /* OWN_WINDOW */
+#endif /* OWN_WINDOW || BUILD_WAYLAND */
 
 #if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
 conky::simple_config_setting<window_type> own_window_type("own_window_type",
