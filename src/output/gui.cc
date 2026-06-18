@@ -128,13 +128,19 @@ conky::lua_traits<alignment>::Map conky::lua_traits<alignment>::map = {
     {"mr", alignment::MIDDLE_RIGHT},
     {"none", alignment::NONE}};
 
-#ifdef OWN_WINDOW
+#if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
 template <>
 conky::lua_traits<window_type>::Map conky::lua_traits<window_type>::map = {
-    {"normal", window_type::NORMAL},   {"dock", window_type::DOCK},
-    {"panel", window_type::PANEL},     {"desktop", window_type::DESKTOP},
-    {"utility", window_type::UTILITY}, {"override", window_type::OVERRIDE}};
+    {"normal", window_type::NORMAL},     {"dock", window_type::DOCK},
+    {"panel", window_type::PANEL},       {"desktop", window_type::DESKTOP},
+    {"utility", window_type::UTILITY},
+#ifdef BUILD_X11
+    {"override", window_type::OVERRIDE},
+#endif /* BUILD_X11 */
+};
+#endif /* OWN_WINDOW || BUILD_WAYLAND */
 
+#ifdef OWN_WINDOW
 template <>
 conky::lua_traits<window_hints>::Map conky::lua_traits<window_hints>::map = {
     {"undecorated", window_hints::UNDECORATED},
@@ -209,12 +215,15 @@ conky::range_config_setting<int> border_width("border_width", 0,
 #ifdef OWN_WINDOW
 conky::simple_config_setting<std::string> own_window_title(
     "own_window_title", PACKAGE_NAME " (" + gethostnamecxx() + ")", false);
-conky::simple_config_setting<window_type> own_window_type("own_window_type",
-                                                          window_type::NORMAL,
-                                                          false);
 conky::simple_config_setting<std::string> own_window_class("own_window_class",
                                                            PACKAGE_NAME, false);
 #endif /* OWN_WINDOW */
+
+#if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
+conky::simple_config_setting<window_type> own_window_type("own_window_type",
+                                                          window_type::NORMAL,
+                                                          false);
+#endif /* OWN_WINDOW || BUILD_WAYLAND */
 
 #if defined(OWN_WINDOW) && defined(BUILD_X11)
 conky::simple_config_setting<uint16_t, window_hints_traits> own_window_hints(

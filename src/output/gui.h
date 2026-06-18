@@ -212,14 +212,19 @@ extern conky::simple_config_setting<bool> forced_redraw;
 #ifdef OWN_WINDOW
 extern priv::own_window_setting own_window;
 extern conky::simple_config_setting<std::string> own_window_title;
-
-/// @brief Window type.
-///
-/// @see window_type
-extern conky::simple_config_setting<window_type> own_window_type;
 /// @brief X11 window class; Wayland XDG Shell app_id.
 extern conky::simple_config_setting<std::string> own_window_class;
 #endif /* OWN_WINDOW */
+
+#if defined(OWN_WINDOW) || defined(BUILD_WAYLAND)
+/// @brief Window type.
+///
+/// On Wayland this selects the wlr-layer-shell layer and, for dock/panel
+/// types, whether the surface reserves screen space via an exclusive zone.
+///
+/// @see window_type
+extern conky::simple_config_setting<window_type> own_window_type;
+#endif /* OWN_WINDOW || BUILD_WAYLAND */
 
 #if defined(OWN_WINDOW) && defined(BUILD_X11)
 struct window_hints_traits {

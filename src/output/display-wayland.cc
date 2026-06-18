@@ -465,6 +465,98 @@ void window_layer_surface_set_size(window *window) {
                                  global_window->rectangle.height());
 }
 
+/// @brief Maps the configured `own_window_type` onto a wlr-layer-shell layer.
+///
+/// Desktop widgets sit on the background, docks below regular windows, and
+/// panels above them; everything else keeps the historical bottom layer.
+static zwlr_layer_shell_v1_layer layer_for_window_type() {
+  switch (own_window_type.get(*state)) {
+    case window_type::DESKTOP:
+      return ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
+    case window_type::PANEL:
+      return ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+    case window_type::DOCK:
+    case window_type::NORMAL:
+    case window_type::UTILITY:
+    default:
+      return ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+  }
+}
+
+/// @brief Updates the layer surface anchor, margin and exclusive zone.
+///
+/// Docks and panels reserve a strip along a screen edge so other surfaces
+/// (e.g. maximized windows) don't overlap them. The wlr-layer-shell exclusive
+/// zone is only honoured when the surface is anchored to a single edge, so
+/// collapse the alignment to one dominant edge and reserve the size
+/// perpendicular to it; the exclusive zone includes the gap/margin from the
+/// edge. Other window types keep the alignment-derived anchor and reserve no
+/// space.
+///
+/// @param window window whose layer surface should be updated
+/// @param width current window width in surface-local pixels
+/// @param height current window height in surface-local pixels
+static void window_update_struts(window *window, int width, int height) {
+  LOG_DEBUG("defining struts");
+
+  alignment text_align = text_alignment.get(*state);
+  axis_align valign = vertical_alignment(text_align);
+  axis_align halign = horizontal_alignment(text_align);
+
+  window_type type = own_window_type.get(*state);
+  bool reserve_space = type == window_type::DOCK || type == window_type::PANEL;
+
+  int anchor = 0;
+  int exclusive_zone = 0;
+
+  if (reserve_space) {
+    if (valign == axis_align::START) {
+      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+      exclusive_zone = height + gap_y.get(*state);
+    } else if (valign == axis_align::END) {
+      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+      exclusive_zone = height + gap_y.get(*state);
+    } else if (halign == axis_align::START) {
+      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+      exclusive_zone = width + gap_x.get(*state);
+    } else if (halign == axis_align::END) {
+      anchor = ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+      exclusive_zone = width + gap_x.get(*state);
+    }
+    // A fully centered (mm) dock/panel has no edge to reserve against, so the
+    // exclusive zone stays zero.
+  } else {
+    switch (valign) {
+      case axis_align::START:
+        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
+        break;
+      case axis_align::END:
+        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
+        break;
+      default:
+        break;
+    }
+    switch (halign) {
+      case axis_align::START:
+        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
+        break;
+      case axis_align::END:
+        anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
+        break;
+      default:
+        break;
+    }
+    // middle anchor alignment is the default and requires no special handling.
+  }
+
+  zwlr_layer_surface_v1_set_anchor(window->layer_surface, anchor);
+  zwlr_layer_surface_v1_set_margin(window->layer_surface, gap_y.get(*state),
+                                   gap_x.get(*state), gap_y.get(*state),
+                                   gap_x.get(*state));
+  zwlr_layer_surface_v1_set_exclusive_zone(window->layer_surface,
+                                           exclusive_zone);
+}
+
 #ifdef BUILD_MOUSE_EVENTS
 static std::map<wl_pointer *, vec2<size_t>> last_known_positions{};
 
@@ -623,7 +715,7 @@ bool display_output_wayland::initialize() {
 
   global_window->layer_surface = zwlr_layer_shell_v1_get_layer_surface(
       wl_globals.layer_shell, global_window->surface, nullptr,
-      ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM, "conky_namespace");
+      layer_for_window_type(), "conky_namespace");
   window_layer_surface_set_size(global_window);
   zwlr_layer_surface_v1_add_listener(global_window->layer_surface,
                                      &layer_surface_listener, nullptr);
@@ -710,7 +802,7 @@ bool display_output_wayland::main_loop_wait(double t) {
     selected_font = 0;
     update_text_area();
 
-    int changed = 0;
+    bool bounds_changed = false;
     int border_total = get_border_total();
 
     int width, height;
@@ -747,7 +839,7 @@ bool display_output_wayland::main_loop_wait(double t) {
       height = text_size.y() + 2 * border_total;
       window_resize(global_window, width, height); /* resize window */
 
-      changed++;
+      bounds_changed |= true;
     }
 
 /* move window if it isn't in right position */
@@ -759,42 +851,7 @@ bool display_output_wayland::main_loop_wait(double t) {
 #endif
 
     /* update struts */
-    if (changed != 0) {
-      int anchor = 0;
-
-      LOG_DEBUG("defining struts");
-
-      alignment text_align = text_alignment.get(*state);
-      switch (vertical_alignment(text_align)) {
-        case axis_align::START:
-          anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_TOP;
-          break;
-        case axis_align::END:
-          anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_BOTTOM;
-          break;
-        default:
-          break;
-      }
-      switch (horizontal_alignment(text_align)) {
-        case axis_align::START:
-          anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_LEFT;
-          break;
-        case axis_align::END:
-          anchor |= ZWLR_LAYER_SURFACE_V1_ANCHOR_RIGHT;
-          break;
-        default:
-          break;
-      }
-      // middle anchor alignment is the default and requires no special
-      // handling.
-
-      if (anchor != -1) {
-        zwlr_layer_surface_v1_set_anchor(global_window->layer_surface, anchor);
-        zwlr_layer_surface_v1_set_margin(global_window->layer_surface,
-                                         gap_y.get(*state), gap_x.get(*state),
-                                         gap_y.get(*state), gap_x.get(*state));
-      }
-    }
+    if (bounds_changed) { window_update_struts(global_window, width, height); }
 
     /* update lua window globals */
     llua_update_window_table(conky::vec2i(width, height),

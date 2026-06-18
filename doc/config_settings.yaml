@@ -454,8 +454,10 @@ values:
     default: 'conky (<hostname>)'
   - name: own_window_type
     desc: |-
-      If `own_window` is set, under X11 you can specify type of window conky
-      displayed as:
+      Specifies the type of window conky is displayed as. Under X11 this
+      requires `own_window` to be set; under Wayland it selects the
+      wlr-layer-shell layer the surface is mounted on (and, for `dock`/`panel`,
+      whether it reserves screen space via an exclusive zone). Available types:
 
       - `normal` mode makes conky show as normal window. This mode can be
         configured with use of [`own_window_hints`](#own_window_hints) setting.
@@ -475,7 +477,9 @@ values:
         position and size, and workarea dimensions, to ensure normal windows
         have most free space available. For WMs that "cut out" entirely covered
         screens from reserved area, the edge will be chosen based on `alignment`
-        setting.
+        setting. Under Wayland the reserved edge is always derived from
+        `alignment`; a fully centered (`mm`) alignment has no edge to reserve
+        against, so use an edge-aligned value (e.g. `tm`, `bm`, `ml`, `mr`).
       - `utility` windows are persistent utility windows (e.g. a palette or
         toolbox). They appear on top of other windows (in the same group), but
         otherwise behave much like `normal` windows.
