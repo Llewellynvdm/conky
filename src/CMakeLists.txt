@@ -384,6 +384,8 @@ if(BUILD_WAYLAND)
       "${CMAKE_CURRENT_SOURCE_DIR}/wl_protocols" # first for reproducibility
       "${Wayland_PROTOCOLS_DIR}/stable/${name}"
       "${Wayland_PROTOCOLS_DIR}/stable"
+      "${Wayland_PROTOCOLS_DIR}/staging/${name}"
+      "${Wayland_PROTOCOLS_DIR}/staging"
       "${Wayland_PROTOCOLS_DIR}/unstable/${name}"
       "${Wayland_PROTOCOLS_DIR}/unstable"
     )
@@ -430,6 +432,10 @@ if(BUILD_WAYLAND)
   
   add_protocol(xdg-shell)
   add_protocol(wlr-layer-shell v1)
+  add_protocol(viewporter)
+  # fractional-scale-v1 is vendored in wl_protocols/ (found first), so the build
+  # doesn't require a recent (>=1.31) system wayland-protocols package.
+  add_protocol(fractional-scale v1)
 
   set(optional_sources ${optional_sources} ${wl_sources})
 endif(BUILD_WAYLAND)

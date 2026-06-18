@@ -41,10 +41,13 @@
 #include <unistd.h>
 
 #include <wayland-client-protocol.h>
+#include <fractional-scale-client-protocol.h>
+#include <viewporter-client-protocol.h>
 #include <wlr-layer-shell-client-protocol.h>
 #include <xdg-shell-client-protocol.h>
 
 #include <cerrno>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
@@ -260,6 +263,7 @@ bool display_output_wayland::detect() {
 static int epoll_fd;
 static epoll_event ep[1];
 
+struct window;
 static window *global_window;
 static wl_display *global_display;
 
@@ -268,8 +272,22 @@ struct window {
   wl_shm *shm;
   wl_surface *surface;
   zwlr_layer_surface_v1 *layer_surface;
-  int scale = 1;
-  int pending_scale = 1;
+  /// @brief Surface viewport mapping the device-pixel buffer onto the logical
+  /// surface size; null when the compositor lacks wp_viewporter.
+  wp_viewport *viewport = nullptr;
+  /// @brief Object reporting the compositor's preferred fractional scale; null
+  /// when the compositor lacks wp_fractional_scale_v1.
+  wp_fractional_scale_v1 *fractional_scale = nullptr;
+  /// @brief Logical-to-device scale factor currently applied to the buffers.
+  ///
+  /// Fractional when the compositor supports wp_fractional_scale_v1, otherwise
+  /// the integer wl_output.scale.
+  float scale = 1.0f;
+  /// @brief Scale most recently advertised by the compositor.
+  ///
+  /// Updated asynchronously by the scale listeners and copied into @ref scale
+  /// when the window is reallocated (see window_resize).
+  float pending_scale = 1.0f;
   int current_buffer;
   std::shared_ptr<cairo_surface_t> shm_surface[2];
   std::unique_ptr<uint8_t[]> private_buffer;
@@ -289,6 +307,8 @@ struct {
   wl_output *output;
   xdg_wm_base *shell;
   zwlr_layer_shell_v1 *layer_shell;
+  wp_viewporter *viewporter;
+  wp_fractional_scale_manager_v1 *fractional_scale_manager;
 } wl_globals;
 
 static void xdg_wm_base_ping(void *data, xdg_wm_base *shell, uint32_t serial) {
@@ -326,9 +346,13 @@ static void output_done(void *data, wl_output *wl_output) {}
 void output_scale(void *data, wl_output *wl_output, int32_t factor) {
   /* For now, assume we have one output and adopt its scale unconditionally. */
   /* We should also re-render immediately when scale changes. */
+  // wl_output.scale only carries integer scales. When the compositor supports
+  // wp_fractional_scale_v1 we get a more precise value from that instead, so
+  // ignore the legacy event to avoid clobbering the fractional scale.
+  if (wl_globals.fractional_scale_manager != nullptr) { return; }
   global_window->pending_scale = factor;
   LOG_TRACE_WITH(({"window->scale", global_window->scale}),
-                 "recieved scale event: {}", factor);
+                 "received output scale event: {}", factor);
 }
 #endif
 
@@ -358,6 +382,17 @@ static const wl_output_listener output_listener = {
 #endif
 };
 
+static void fractional_scale_preferred(
+    void *data, wp_fractional_scale_v1 *fractional_scale, uint32_t scale) {
+  // scale is expressed in 1/120ths of the logical pixel size.
+  global_window->pending_scale = static_cast<float>(scale) / 120.0f;
+  LOG_TRACE_WITH(({"window->scale", global_window->scale}),
+                 "received fractional scale event: {}/120", scale);
+}
+
+static const wp_fractional_scale_v1_listener fractional_scale_listener = {
+    /*.preferred_scale =*/&fractional_scale_preferred};
+
 void registry_handle_global(void *data, wl_registry *registry, uint32_t name,
                             const char *interface, uint32_t version) {
   if (strcmp(interface, "wl_compositor") == 0) {
@@ -380,6 +415,14 @@ void registry_handle_global(void *data, wl_registry *registry, uint32_t name,
   } else if (strcmp(interface, "zwlr_layer_shell_v1") == 0) {
     wl_globals.layer_shell = static_cast<zwlr_layer_shell_v1 *>(
         wl_registry_bind(registry, name, &zwlr_layer_shell_v1_interface, 1));
+  } else if (strcmp(interface, wp_viewporter_interface.name) == 0) {
+    wl_globals.viewporter = static_cast<wp_viewporter *>(
+        wl_registry_bind(registry, name, &wp_viewporter_interface, 1));
+  } else if (strcmp(interface, wp_fractional_scale_manager_v1_interface.name) ==
+             0) {
+    wl_globals.fractional_scale_manager =
+        static_cast<wp_fractional_scale_manager_v1 *>(wl_registry_bind(
+            registry, name, &wp_fractional_scale_manager_v1_interface, 1));
   }
 }
 
@@ -596,10 +639,10 @@ bool display_output_wayland::initialize() {
   return true;
 }
 
-typedef void (*display_global_handler_t)(display *display, uint32_t name,
+typedef void (*display_global_handler_t)(wl_display *display, uint32_t name,
                                          const char *interface,
                                          uint32_t version, void *data);
-typedef void (*display_output_handler_t)(output *output, void *data);
+typedef void (*display_output_handler_t)(wl_output *output, void *data);
 
 bool display_output_wayland::shutdown() { return false; }
 
@@ -675,7 +718,13 @@ bool display_output_wayland::main_loop_wait(double t) {
 
     int fixed_size = 0;
 
-    bool scale_changed = global_window->scale != global_window->pending_scale;
+    // Scales are quantised to 1/120 (fractional-scale) or whole integers, so a
+    // genuine change is always >= 1/120; half a step is comfortably above any
+    // float-representation noise and below the smallest real change.
+    constexpr float scale_change_threshold = 1.0f / 240.0f;
+    bool scale_changed =
+        std::abs(global_window->scale - global_window->pending_scale) >
+        scale_change_threshold;
     if (scale_changed)
       LOG_TRACE("scale changed from {} to {}", global_window->scale,
                 global_window->pending_scale);
@@ -686,7 +735,8 @@ bool display_output_wayland::main_loop_wait(double t) {
          text_size.y() + 2 * border_total != height || scale_changed)) {
       /* clamp text_width to configured maximum */
       if (maximum_width.get(*state)) {
-        int mw = global_window->scale * maximum_width.get(*state);
+        int mw =
+            static_cast<int>(global_window->scale * maximum_width.get(*state));
         if (mw > 0) { text_size.set_x(std::min(mw, text_size.x())); }
       }
 
@@ -1143,20 +1193,26 @@ static void shm_pool_destroy(shm_pool *pool) {
   delete pool;
 }
 
-static int stride_for_shm_surface(rect<size_t> *rect, int scale) {
-  return cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32,
-                                       rect->width() * scale);
+/// @brief Physical (device-pixel) dimensions of the buffer backing a logical
+/// rectangle.
+///
+/// The scale may be fractional, so the result is rounded up to guarantee the
+/// buffer is large enough to cover the logical area.
+static vec2i scaled_size(rect<size_t> *rect, float scale) {
+  return conky::ceil(rect->size().cast<float>() * scale).cast<int>();
 }
 
-static int data_length_for_shm_surface(rect<size_t> *rect, int scale) {
-  int stride;
+static int stride_for_shm_surface(rect<size_t> *rect, float scale) {
+  return cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32,
+                                       scaled_size(rect, scale).x());
+}
 
-  stride = stride_for_shm_surface(rect, scale);
-  return stride * rect->height() * scale;
+static int data_length_for_shm_surface(rect<size_t> *rect, float scale) {
+  return stride_for_shm_surface(rect, scale) * scaled_size(rect, scale).y();
 }
 
 static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
-    void *none, rect<size_t> *rectangle, shm_pool *pool, int scale) {
+    void *none, rect<size_t> *rectangle, shm_pool *pool, float scale) {
   shm_surface_data *data;
   uint32_t format;
   cairo_surface_t *surface;
@@ -1179,7 +1235,7 @@ static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
     return NULL;
   }
 
-  auto scaled = rectangle->size() * scale;
+  auto scaled = scaled_size(rectangle, scale);
   surface = cairo_image_surface_create_for_data(
       static_cast<unsigned char *>(map), cairo_format, scaled.x(), scaled.y(),
       stride);
@@ -1202,7 +1258,7 @@ static std::shared_ptr<conky::draw_surface> create_shm_surface_from_pool(
 void window_allocate_buffer(window *window) {
   assert(window->shm != nullptr);
 
-  int scale = window->scale;
+  float scale = window->scale;
   shm_pool *pool;
   pool = shm_pool_create(
       window->shm, data_length_for_shm_surface(&window->rectangle, scale) * 2);
@@ -1235,7 +1291,7 @@ void window_allocate_buffer(window *window) {
   int length = data_length_for_shm_surface(&window->rectangle, scale);
 
   window->private_buffer = std::make_unique<uint8_t[]>(length);
-  auto scaled = window->rectangle.size() * scale;
+  auto scaled = scaled_size(&window->rectangle, scale);
 
   window->cairo_surface = std::shared_ptr<conky::draw_surface>(
       cairo_image_surface_create_for_data(window->private_buffer.get(),
@@ -1261,11 +1317,25 @@ window *window_create(wl_surface *surface, wl_shm *shm, int width, int height) {
 
   result->rectangle.set_pos(vec2<size_t>::Zero());
   result->rectangle.set_size(width, height);
-  result->scale = 1;
-  result->pending_scale = 1;
+  result->scale = 1.0f;
+  result->pending_scale = 1.0f;
 
   result->surface = surface;
   result->shm = shm;
+
+  // When the compositor supports viewporter we scale via a wp_viewport
+  // destination rather than wl_surface.set_buffer_scale, which lets us honour
+  // fractional scales reported through wp_fractional_scale_v1.
+  if (wl_globals.viewporter != nullptr) {
+    result->viewport =
+        wp_viewporter_get_viewport(wl_globals.viewporter, surface);
+  }
+  if (wl_globals.fractional_scale_manager != nullptr) {
+    result->fractional_scale = wp_fractional_scale_manager_v1_get_fractional_scale(
+        wl_globals.fractional_scale_manager, surface);
+    wp_fractional_scale_v1_add_listener(result->fractional_scale,
+                                        &fractional_scale_listener, nullptr);
+  }
 
   return result;
 }
@@ -1289,6 +1359,10 @@ void window_free_buffer(window *window) {
 
 void window_destroy(window *window) {
   window_free_buffer(window);
+  if (window->fractional_scale) {
+    wp_fractional_scale_v1_destroy(window->fractional_scale);
+  }
+  if (window->viewport) { wp_viewport_destroy(window->viewport); }
   zwlr_layer_surface_v1_destroy(window->layer_surface);
   wl_surface_attach(window->surface, nullptr, 0, 0);
   wl_surface_commit(window->surface);
@@ -1312,7 +1386,7 @@ void window_commit_buffer(window *window) {
 
   cairo_surface_flush(window->cairo_surface.get());
 
-  int scale = window->scale;
+  float scale = window->scale;
   int length = data_length_for_shm_surface(&window->rectangle, scale);
 
   auto shm_surf = window->shm_surface[window->current_buffer].get();
@@ -1320,7 +1394,17 @@ void window_commit_buffer(window *window) {
 
   std::memcpy(shm_data, window->private_buffer.get(), length);
 
-  wl_surface_set_buffer_scale(global_window->surface, global_window->scale);
+  if (window->viewport != nullptr) {
+    // The buffer is rendered at device resolution; the viewport maps it back
+    // down to the logical surface size, which is what carries the (possibly
+    // fractional) scale to the compositor.
+    wp_viewport_set_destination(window->viewport, window->rectangle.width(),
+                                window->rectangle.height());
+  } else {
+    // No viewporter: fall back to integer buffer scaling.
+    wl_surface_set_buffer_scale(window->surface,
+                                static_cast<int>(std::lround(scale)));
+  }
   wl_surface_attach(window->surface, get_buffer_from_cairo_surface(shm_surf), 0,
                     0);
   /* repaint all the pixels in the surface, change size to only repaint changed
