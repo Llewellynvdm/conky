@@ -815,9 +815,8 @@ if(BUILD_NVIDIA)
 endif(BUILD_NVIDIA)
 
 if(BUILD_NVIDIA_NVML)
-  if(NOT ("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "x86_64"))
-    message(FATAL_ERROR "Currently only x86_64 is supported, but yours is ${CMAKE_SYSTEM_PROCESSOR}.")
-  endif()
+  # Supported architectures are enforced by 3rdparty/nvml/CMakeLists.txt, which
+  # picks the matching prebuilt stub.
 endif(BUILD_NVIDIA_NVML)
 
 if(BUILD_IMLIB2)

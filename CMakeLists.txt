@@ -57,8 +57,8 @@ set(conky_libs ${conky_libs} spdlog::spdlog)
 set(conky_includes ${conky_includes} "${CMAKE_SOURCE_DIR}/3rdparty/Vc")
 
 if(BUILD_NVIDIA_NVML)
-  set(conky_libs ${conky_libs} ${NVML_LIB})
-  set(conky_includes ${conky_includes} ${NVML_INCLUDE_DIR})
+  # The nvml target carries its include dir as an INTERFACE property.
+  set(conky_libs ${conky_libs} nvml)
 endif(BUILD_NVIDIA_NVML)
 
 # Finally, add some code
