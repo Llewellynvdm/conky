@@ -66,7 +66,7 @@ class callback_base {
   callback_base(const callback_base &) = delete;
   callback_base &operator=(const callback_base &) = delete;
 
-  virtual bool operator==(const callback_base &) = 0;
+  virtual bool operator==(const callback_base &) const = 0;
 
   void run();
   void start_routine();
@@ -209,7 +209,7 @@ struct hash_tuple<0, Elements...> {
  */
 template <typename Result, typename... Keys>
 class callback : public priv::callback_base {
-  virtual bool operator==(const callback_base &other) {
+  virtual bool operator==(const callback_base &other) const {
     return tuple == dynamic_cast<const callback &>(other).tuple;
   }
 

@@ -903,64 +903,64 @@ void print_pid_vmpeak(struct text_object *obj, char *p,
                       unsigned int p_max_size) {
   internal_print_pid_vm(
       obj, p, p_max_size, "VmPeak:\t",
-      "Can't find the process peak virtual memory size in '%s'");
+      "Can't find the process peak virtual memory size in '{}'");
 }
 
 void print_pid_vmsize(struct text_object *obj, char *p,
                       unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmSize:\t",
-                        "Can't find the process virtual memory size in '%s'");
+                        "Can't find the process virtual memory size in '{}'");
 }
 
 void print_pid_vmlck(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmLck:\t",
-                        "Can't find the process locked memory size in '%s'");
+                        "Can't find the process locked memory size in '{}'");
 }
 
 void print_pid_vmhwm(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(
       obj, p, p_max_size, "VmHWM:\t",
-      "Can't find the process peak resident set size in '%s'");
+      "Can't find the process peak resident set size in '{}'");
 }
 
 void print_pid_vmrss(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmRSS:\t",
-                        "Can't find the process resident set size in '%s'");
+                        "Can't find the process resident set size in '{}'");
 }
 
 void print_pid_vmdata(struct text_object *obj, char *p,
                       unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmData:\t",
-                        "Can't find the process data segment size in '%s'");
+                        "Can't find the process data segment size in '{}'");
 }
 
 void print_pid_vmstk(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmStk:\t",
-                        "Can't find the process stack segment size in '%s'");
+                        "Can't find the process stack segment size in '{}'");
 }
 
 void print_pid_vmexe(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(obj, p, p_max_size, "VmExe:\t",
-                        "Can't find the process text segment size in '%s'");
+                        "Can't find the process text segment size in '{}'");
 }
 
 void print_pid_vmlib(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(
       obj, p, p_max_size, "VmLib:\t",
-      "Can't find the process shared library code size in '%s'");
+      "Can't find the process shared library code size in '{}'");
 }
 
 void print_pid_vmpte(struct text_object *obj, char *p,
                      unsigned int p_max_size) {
   internal_print_pid_vm(
       obj, p, p_max_size, "VmPTE:\t",
-      "Can't find the process page table entries size in '%s'");
+      "Can't find the process page table entries size in '{}'");
 }
 
 #define READ_ENTRY "read_bytes: "

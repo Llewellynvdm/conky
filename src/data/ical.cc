@@ -108,7 +108,7 @@ void parse_ical_args(struct text_object *obj, const char *arg,
   struct obj_ical *opaque;
   unsigned int num;
 
-  if (sscanf(arg, "%d %s", &num, filename) != 2) {
+  if (sscanf(arg, "%u %s", &num, filename) != 2) {
     free(filename);
     COMMAND_ARG_ERR("ical", "wrong number of arguments for $ical");
   }
