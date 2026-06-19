@@ -125,13 +125,13 @@ void clear_msg_attrs();
 
 }  // namespace conky::log
 
-#define LOG_SCOPE(name, ...)                                              \
-  ([&]() -> conky::log::span_guard {                                      \
-    conky::log::span_guard _guard;                                        \
-    if (spdlog::default_logger()->should_log(spdlog::level::debug))       \
-      _guard.open(spdlog::source_loc{__FILE__, __LINE__, __func__}, name, \
-                  ##__VA_ARGS__);                                         \
-    return _guard;                                                        \
+#define LOG_SCOPE(name, ...)                                        \
+  ([&]() -> conky::log::span_guard {                                \
+    conky::log::span_guard _guard;                                  \
+    if (spdlog::default_logger()->should_log(spdlog::level::debug)) \
+      _guard.open(spdlog::source_loc{__FILE__, __LINE__, __func__}, \
+                  name __VA_OPT__(, ) __VA_ARGS__);                 \
+    return _guard;                                                  \
   }())
 
 // syslog.h defines LOG_DEBUG, LOG_INFO, LOG_WARNING etc. as integers

@@ -57,6 +57,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_COMPILE_WARNING_AS_ERROR ${MAINTAINER_MODE})
 
+# In maintainer builds, reject compiler-specific language extensions. Setting
+# CMAKE_CXX_EXTENSIONS=OFF above only selects the ISO -std=c++NN dialect over
+# gnu++NN; -Wpedantic additionally diagnoses any use of extensions in the
+# sources. Combined with CMAKE_COMPILE_WARNING_AS_ERROR this makes extension
+# usage a hard error (generated toluapp code is exempted in ToLua.cmake via
+# -Wno-error=pedantic).
+if(MAINTAINER_MODE)
+  add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wpedantic>)
+endif()
+
 if(NOT OS_OPENBSD)
   # Always use libc++ when compiling w/ clang
   # Not on OpenBSD because that's the default for its vendored Clang
