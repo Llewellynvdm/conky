@@ -21,6 +21,7 @@
 #include "mouse-events.h"
 
 #include <array>
+#include <concepts>
 #include <cstring>
 #include <ctime>
 #include <optional>
@@ -54,17 +55,15 @@ void push_table_value(lua_State *L, std::string key, std::string value) {
   lua_settable(L, -3);
 }
 
-template <typename T>
-typename std::enable_if<std::is_integral<T>::value>::type push_table_value(
-    lua_State *L, std::string key, T value) {
+template <std::integral T>
+void push_table_value(lua_State *L, std::string key, T value) {
   lua_pushstring(L, key.c_str());
   lua_pushinteger(L, value);
   lua_settable(L, -3);
 }
 
-template <typename T>
-typename std::enable_if<std::is_floating_point<T>::value>::type
-push_table_value(lua_State *L, std::string key, T value) {
+template <std::floating_point T>
+void push_table_value(lua_State *L, std::string key, T value) {
   lua_pushstring(L, key.c_str());
   lua_pushnumber(L, value);
   lua_settable(L, -3);
@@ -229,7 +228,7 @@ static std::map<size_t, device_info> device_info_cache{};
 static std::map<xi_device_id, size_t> xi_id_mapping{};
 
 device_info *device_info::from_xi_id(xi_device_id device_id, Display *display) {
-  if (xi_id_mapping.count(device_id) > 0) {
+  if (xi_id_mapping.contains(device_id)) {
     return &device_info_cache[xi_id_mapping[device_id]];
   }
   if (display == nullptr) return nullptr;
@@ -263,7 +262,7 @@ void handle_xi_device_change(const XIHierarchyEvent *event) {
     for (int i = 0; i < event->num_info; i++) {
       auto info = event->info[i];
       if ((info.flags & XISlaveRemoved) == 0) continue;
-      if (xi_id_mapping.count(info.deviceid) == 0) continue;
+      if (!xi_id_mapping.contains(info.deviceid)) continue;
 
       size_t id = xi_id_mapping[info.deviceid];
       xi_id_mapping.erase(info.deviceid);
@@ -586,7 +585,7 @@ bool xi_pointer_interact_event::read_from_cookie(Display *display,
     valuator_t valuator = static_cast<valuator_t>(v);
     auto &valuator_info = device->valuator(valuator);
 
-    if (this->valuators.count(valuator_info.index) == 0) { continue; }
+    if (!this->valuators.contains(valuator_info.index)) { continue; }
     auto current = this->valuators[valuator_info.index];
 
     if (valuator_info.relative) {
@@ -632,7 +631,7 @@ bool xi_pointer_crossing_event::read_from_cookie(Display *display,
 }
 
 bool xi_pointer_interact_event::test_valuator(valuator_t valuator) const {
-  return this->valuators.count(this->device->valuator(valuator).index) > 0;
+  return this->valuators.contains(this->device->valuator(valuator).index);
 }
 conky_valuator_info *xi_pointer_interact_event::valuator_info(
     valuator_t valuator) const {
@@ -643,14 +642,14 @@ std::optional<double> xi_pointer_interact_event::valuator_value(
   auto info = this->valuator_info(valuator);
   if (info == nullptr) return std::nullopt;
   size_t index = info->index;
-  if (this->valuators.count(index) == 0) return std::nullopt;
+  if (!this->valuators.contains(index)) return std::nullopt;
   return this->valuators.at(index);
 }
 
 std::optional<double> xi_pointer_interact_event::valuator_relative_value(
     valuator_t valuator) const {
   auto &info = this->device->valuator(valuator);
-  if (this->valuators.count(info.index) == 0) return std::nullopt;
+  if (!this->valuators.contains(info.index)) return std::nullopt;
   return this->valuators_relative.at(*valuator);
 }
 

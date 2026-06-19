@@ -201,7 +201,10 @@ int update_apcupsd() {
   }
 
   do {
-    struct addrinfo hints{};
+    struct addrinfo hints = {
+        .ai_family = AF_UNSPEC,
+        .ai_socktype = SOCK_STREAM,
+    };
     struct addrinfo *ai, *rp;
     int res;
     short sz = 0;
@@ -209,11 +212,6 @@ int update_apcupsd() {
     //
     // connect to apcupsd daemon
     //
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_flags = 0;
-    hints.ai_protocol = 0;
     snprintf(portbuf, 8, "%d", apcupsd.port);
     res = getaddrinfo(apcupsd.host, portbuf, &hints, &ai);
     if (res != 0) {

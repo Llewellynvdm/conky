@@ -161,17 +161,16 @@ void print_read_tcpip(struct text_object *obj, char *p, int p_max_size,
   fd_set readfds;
   struct timeval tv{};
   auto *rtd = static_cast<struct read_tcpip_data *>(obj->data.opaque);
-  struct addrinfo hints{};
+  struct addrinfo hints = {
+      .ai_family = AF_UNSPEC,
+      .ai_socktype = protocol == IPPROTO_TCP ? SOCK_STREAM : SOCK_DGRAM,
+      .ai_protocol = protocol,
+  };
   struct addrinfo *airesult, *rp;
   char portbuf[8];
 
   if (rtd == nullptr) { return; }
 
-  memset(&hints, 0, sizeof(struct addrinfo));
-  hints.ai_family = AF_UNSPEC;
-  hints.ai_socktype = protocol == IPPROTO_TCP ? SOCK_STREAM : SOCK_DGRAM;
-  hints.ai_flags = 0;
-  hints.ai_protocol = protocol;
   snprintf(portbuf, 8, "%u", rtd->port);
   if (getaddrinfo(rtd->host, portbuf, &hints, &airesult) != 0) {
     LOG_ERROR("{}: problem resolving the hostname",

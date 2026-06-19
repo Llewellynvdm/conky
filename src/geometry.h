@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
@@ -367,8 +368,7 @@ struct vec {
 /// Uses Vc's SIMD `floor` rather than the scalar `std::floor`. The vec storage
 /// is a `Vc::array` (no SIMD math), so the values are routed through a
 /// `Vc::SimdArray` for the operation.
-template <typename T, size_t Length,
-          std::enable_if_t<std::is_floating_point_v<T>, int> = 0>
+template <std::floating_point T, size_t Length>
 inline vec<T, Length> floor(const vec<T, Length> &v) {
   std::array<T, Length> data = v.to_array();
   Vc::SimdArray<T, Length> simd(data.data(), Vc::Unaligned);
@@ -377,8 +377,8 @@ inline vec<T, Length> floor(const vec<T, Length> &v) {
 }
 
 /// @brief No-op `floor` for integral vectors; they are already whole numbers.
-template <typename T, size_t Length,
-          std::enable_if_t<!std::is_floating_point_v<T>, int> = 0>
+template <typename T, size_t Length>
+  requires(!std::floating_point<T>)
 inline vec<T, Length> floor(const vec<T, Length> &v) {
   return v;
 }
@@ -388,8 +388,7 @@ inline vec<T, Length> floor(const vec<T, Length> &v) {
 /// Uses Vc's SIMD `ceil` rather than the scalar `std::ceil`. The vec storage is
 /// a `Vc::array` (no SIMD math), so the values are routed through a
 /// `Vc::SimdArray` for the operation.
-template <typename T, size_t Length,
-          std::enable_if_t<std::is_floating_point_v<T>, int> = 0>
+template <std::floating_point T, size_t Length>
 inline vec<T, Length> ceil(const vec<T, Length> &v) {
   std::array<T, Length> data = v.to_array();
   Vc::SimdArray<T, Length> simd(data.data(), Vc::Unaligned);
@@ -398,8 +397,8 @@ inline vec<T, Length> ceil(const vec<T, Length> &v) {
 }
 
 /// @brief No-op `ceil` for integral vectors; they are already whole numbers.
-template <typename T, size_t Length,
-          std::enable_if_t<!std::is_floating_point_v<T>, int> = 0>
+template <typename T, size_t Length>
+  requires(!std::floating_point<T>)
 inline vec<T, Length> ceil(const vec<T, Length> &v) {
   return v;
 }

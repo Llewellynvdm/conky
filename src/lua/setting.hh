@@ -319,16 +319,14 @@ void simple_config_setting<T, Traits>::lua_setter(lua::state &l, bool init) {
 }
 
 template <typename Signed1, typename Signed2>
-bool between(Signed1 value, Signed2 min,
-             typename std::enable_if<std::is_signed<Signed2>::value,
-                                     Signed2>::type max) {
+  requires std::is_signed_v<Signed2>
+bool between(Signed1 value, Signed2 min, Signed2 max) {
   return value >= min && value <= max;
 }
 
 template <typename Signed1, typename Unsigned2>
-bool between(Signed1 value, Unsigned2 min,
-             typename std::enable_if<std::is_unsigned<Unsigned2>::value,
-                                     Unsigned2>::type max) {
+  requires std::is_unsigned_v<Unsigned2>
+bool between(Signed1 value, Unsigned2 min, Unsigned2 max) {
   return value >= 0 &&
          static_cast<typename std::make_unsigned<Signed1>::type>(value) >=
              min &&

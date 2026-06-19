@@ -71,8 +71,8 @@ struct attribute {
   std::string key;
   std::string value;
 
-  template <typename T,
-            typename = std::enable_if_t<fmt::is_formattable<T>::value>>
+  template <typename T>
+    requires fmt::is_formattable<T>::value
   attribute(std::string_view k, const T &v)
       : key(k), value(fmt::format("{}", v)) {}
 };

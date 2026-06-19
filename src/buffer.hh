@@ -55,8 +55,8 @@ class buffer_writer {
 
   bool append(std::string_view sv) { return append(sv.data(), sv.size()); }
 
-  template <typename T,
-            typename = std::enable_if_t<fmt::is_formattable<T>::value>>
+  template <typename T>
+    requires fmt::is_formattable<T>::value
   bool append(const T &value) {
     size_t rem = remaining();
     auto result = fmt::format_to_n(cursor(), rem, "{}", value);

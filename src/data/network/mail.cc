@@ -120,13 +120,12 @@ class mail_cb
   uint16_t retries;
 
   void resolve_host() {
-    struct addrinfo hints{};
+    struct addrinfo hints = {
+        .ai_family = AF_UNSPEC,
+        .ai_socktype = SOCK_STREAM,
+        .ai_protocol = IPPROTO_TCP,
+    };
     char portbuf[8];
-
-    memset(&hints, 0, sizeof(struct addrinfo));
-    hints.ai_family = AF_UNSPEC;
-    hints.ai_socktype = SOCK_STREAM;
-    hints.ai_protocol = IPPROTO_TCP;
     snprintf(portbuf, 8, "%" SCNu16, get<MP_PORT>());
 
     if (int res = getaddrinfo(get<MP_HOST>().c_str(), portbuf, &hints, &ai)) {

@@ -549,21 +549,12 @@ void x11_init_window(lua::state &l, bool own) {
     if (own_window_type.get(l) == window_type::OVERRIDE) {
       /* An override_redirect True window.
        * No WM hints or button processing needed. */
-      XSetWindowAttributes attrs = {ParentRelative,
-                                    0L,
-                                    0,
-                                    0L,
-                                    0,
-                                    0,
-                                    Always,
-                                    0L,
-                                    0L,
-                                    False,
-                                    StructureNotifyMask | ExposureMask,
-                                    0L,
-                                    True,
-                                    0,
-                                    0};
+      XSetWindowAttributes attrs = {
+          .background_pixmap = ParentRelative,
+          .backing_store = Always,
+          .event_mask = StructureNotifyMask | ExposureMask,
+          .override_redirect = True,
+      };
       flags |= CWBackPixel;
       if (window.opacity < 0xff) {
         attrs.colormap = window.colourmap;
@@ -585,22 +576,13 @@ void x11_init_window(lua::state &l, bool own) {
       /* A window managed by the window manager.
        * Process hints and buttons. */
       XSetWindowAttributes attrs = {
-          ParentRelative,
-          0L,
-          0,
-          0L,
-          0,
-          0,
-          Always,
-          0L,
-          0L,
-          False,
-          StructureNotifyMask | ExposureMask | ButtonPressMask |
-              ButtonReleaseMask,
-          0L,
-          own_window_type.get(l) == window_type::UTILITY ? True : False,
-          0,
-          0};
+          .background_pixmap = ParentRelative,
+          .backing_store = Always,
+          .event_mask = StructureNotifyMask | ExposureMask | ButtonPressMask |
+                        ButtonReleaseMask,
+          .override_redirect =
+              own_window_type.get(l) == window_type::UTILITY ? True : False,
+      };
 
       XWMHints wmHint;
       Atom xa;
@@ -1057,9 +1039,9 @@ void get_x11_desktop_info(Display *current_display, Atom atom) {
     /* Set the PropertyChangeMask on the root window, if not set */
     XGetWindowAttributes(display, root, &window_attributes);
     if ((window_attributes.your_event_mask & PropertyChangeMask) == 0) {
-      XSetWindowAttributes attributes;
-      attributes.event_mask =
-          window_attributes.your_event_mask | PropertyChangeMask;
+      XSetWindowAttributes attributes = {
+          .event_mask = window_attributes.your_event_mask | PropertyChangeMask,
+      };
       XChangeWindowAttributes(display, root, CWEventMask, &attributes);
       XGetWindowAttributes(display, root, &window_attributes);
     }

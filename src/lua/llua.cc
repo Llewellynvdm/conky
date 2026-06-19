@@ -622,7 +622,7 @@ bool llua_mouse_hook(const EventT &ev) {
   if (conky::lua_mouse_hook.get(*state).empty()) { return false; }
   const std::string raw_hook_name = conky::lua_mouse_hook.get(*state);
   std::string hook_name;
-  if (raw_hook_name.rfind("conky_", 0) == 0) {
+  if (raw_hook_name.starts_with("conky_")) {
     hook_name = raw_hook_name;
   } else {
     hook_name = "conky_" + raw_hook_name;

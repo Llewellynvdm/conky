@@ -2851,7 +2851,7 @@ std::optional<std::string> get_kv_field(std::istream &in,
   std::string line;
   while (std::getline(in, line)) {
     // Match "<key>=" at the start of the line.
-    if (line.rfind(key, 0) != 0 || line.size() <= key.size() ||
+    if (!line.starts_with(key) || line.size() <= key.size() ||
         line[key.size()] != '=') {
       continue;
     }

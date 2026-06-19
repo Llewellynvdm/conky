@@ -94,12 +94,13 @@ static char *fetch_hddtemp_output(void) {
   int sockfd;
   char *buf = nullptr;
   int buflen, offset = 0, rlen;
-  struct addrinfo hints, *result, *rp;
+  struct addrinfo *result, *rp;
   int i;
 
-  memset(&hints, 0, sizeof(hints));
-  hints.ai_family = AF_INET; /* XXX: hddtemp has no ipv6 support (yet?) */
-  hints.ai_socktype = SOCK_STREAM;
+  struct addrinfo hints = {
+      .ai_family = AF_INET, /* XXX: hddtemp has no ipv6 support (yet?) */
+      .ai_socktype = SOCK_STREAM,
+  };
 
   if ((i = getaddrinfo(hddtemp_host.get(*state).c_str(),
                        hddtemp_port.get(*state).c_str(), &hints, &result))) {

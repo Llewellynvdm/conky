@@ -286,7 +286,7 @@ std::optional<std::filesystem::path> user_home() {
 }
 
 std::string tilde_expand(const std::string &unexpanded) {
-  if (unexpanded.compare(0, 1, "~") != 0) { return unexpanded; }
+  if (!unexpanded.starts_with('~')) { return unexpanded; }
   if (unexpanded.length() == 1) {
     auto home = user_home();
     if (home->empty()) {

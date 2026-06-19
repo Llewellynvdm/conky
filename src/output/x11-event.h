@@ -68,19 +68,15 @@ struct event {
   ///
   /// `event_error` is intentionally excluded so error/none states can only
   /// be produced internally (see `event::none()`).
-  template <
-      typename Inner,
-      std::enable_if_t<std::is_constructible_v<variant, Inner &&> &&
-                           !std::is_same_v<std::decay_t<Inner>, event_error>,
-                       int> = 0>
+  template <typename Inner>
+    requires(std::is_constructible_v<variant, Inner &&> &&
+             !std::is_same_v<std::decay_t<Inner>, event_error>)
   constexpr event(Inner &&inner) : inner(std::forward<Inner>(inner)) {}
   constexpr event() : inner(event_error::EXPLICIT_NONE) {}
 
-  template <
-      typename Inner,
-      std::enable_if_t<std::is_constructible_v<variant, Inner &&> &&
-                           !std::is_same_v<std::decay_t<Inner>, event_error>,
-                       int> = 0>
+  template <typename Inner>
+    requires(std::is_constructible_v<variant, Inner &&> &&
+             !std::is_same_v<std::decay_t<Inner>, event_error>)
   constexpr event &operator=(Inner &&value) {
     inner = std::forward<Inner>(value);
     return *this;
@@ -125,12 +121,12 @@ struct event {
   /// This function will not work on window hierarchy >2.
   bool is_window_subject(Window window) const;
 
-  template <typename T,
-            std::enable_if_t<!std::is_same_v<T, event_error>, int> = 0>
+  template <typename T>
+    requires(!std::is_same_v<T, event_error>)
   std::optional<std::reference_wrapper<T>> downcast();
 
-  template <typename T,
-            std::enable_if_t<!std::is_same_v<T, event_error>, int> = 0>
+  template <typename T>
+    requires(!std::is_same_v<T, event_error>)
   inline std::optional<std::reference_wrapper<const T>> downcast() const {
     return const_cast<event &>(*this).downcast<T>();
   }

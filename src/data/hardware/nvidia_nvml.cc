@@ -259,11 +259,11 @@ void Device::query_max_temps() {
   // absolute thresholds otherwise.
 #if defined(nvmlTemperature_v1) && defined(nvmlMarginTemperature_v1)
   // Preferred path (Ada and later): current temp + margin + per-domain TLIMITs.
-  nvmlTemperature_t query_temp = {};
-  query_temp.version = nvmlTemperature_v1;
-  query_temp.sensorType = NVML_TEMPERATURE_GPU;
-  nvmlMarginTemperature_t query_margin = {};
-  query_margin.version = nvmlMarginTemperature_v1;
+  nvmlTemperature_t query_temp = {
+      .version = nvmlTemperature_v1,
+      .sensorType = NVML_TEMPERATURE_GPU,
+  };
+  nvmlMarginTemperature_t query_margin = {.version = nvmlMarginTemperature_v1};
 
   auto temp_ret = nvmlDeviceGetTemperatureV(this->device, &query_temp);
   auto margin_ret = nvmlDeviceGetMarginTemperature(this->device, &query_margin);
@@ -281,15 +281,12 @@ void Device::query_max_temps() {
   int margin = query_margin.marginTemperature;
 
   // Now get all the TLIMITs
-  nvmlFieldValue_t queries[4] = {};
-  // shutdown_tlimit
-  queries[0].fieldId = NVML_FI_DEV_TEMPERATURE_SHUTDOWN_TLIMIT;
-  // slowdown_tlimit
-  queries[1].fieldId = NVML_FI_DEV_TEMPERATURE_SLOWDOWN_TLIMIT;
-  // mem_max_tlimit
-  queries[2].fieldId = NVML_FI_DEV_TEMPERATURE_MEM_MAX_TLIMIT;
-  // gpu_max_tlimit
-  queries[3].fieldId = NVML_FI_DEV_TEMPERATURE_GPU_MAX_TLIMIT;
+  nvmlFieldValue_t queries[4] = {
+      {.fieldId = NVML_FI_DEV_TEMPERATURE_SHUTDOWN_TLIMIT},  // shutdown_tlimit
+      {.fieldId = NVML_FI_DEV_TEMPERATURE_SLOWDOWN_TLIMIT},  // slowdown_tlimit
+      {.fieldId = NVML_FI_DEV_TEMPERATURE_MEM_MAX_TLIMIT},   // mem_max_tlimit
+      {.fieldId = NVML_FI_DEV_TEMPERATURE_GPU_MAX_TLIMIT},   // gpu_max_tlimit
+  };
 
   auto ret = nvmlDeviceGetFieldValues(this->device, 4, queries);
   if (ret != NVML_SUCCESS) {
@@ -445,8 +442,7 @@ void Device::query_power_limit() {
   // Did we already call this?
   if (this->power_limit.was_queried) { return; }
 
-  nvmlFieldValue_t query = {};
-  query.fieldId = NVML_FI_DEV_POWER_CURRENT_LIMIT;
+  nvmlFieldValue_t query = {.fieldId = NVML_FI_DEV_POWER_CURRENT_LIMIT};
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
   // nvmlDeviceGetFieldValues can return NVML_SUCCESS overall while reporting a
   // per-field error (e.g. the field is unknown to an older driver), in which
@@ -494,8 +490,7 @@ void Device::query_num_fans() {
 }
 
 Device::MemInfo Device::get_mem_info() const {
-  nvmlMemory_v2_t query = {};
-  query.version = nvmlMemory_v2;
+  nvmlMemory_v2_t query = {.version = nvmlMemory_v2};
   auto status = nvmlDeviceGetMemoryInfo_v2(this->device, &query);
 
   return {
@@ -511,9 +506,10 @@ int Device::get_gpu_temp() const {
   // Preferred versioned query, when both the header declares it and the loaded
   // driver implements it. Otherwise fall through to the classic API below,
   // which covers old headers (compile time) and old drivers (runtime).
-  nvmlTemperature_t query_temp = {};
-  query_temp.version = nvmlTemperature_v1;
-  query_temp.sensorType = NVML_TEMPERATURE_GPU;
+  nvmlTemperature_t query_temp = {
+      .version = nvmlTemperature_v1,
+      .sensorType = NVML_TEMPERATURE_GPU,
+  };
   if (nvmlDeviceGetTemperatureV(this->device, &query_temp) == NVML_SUCCESS) {
     return query_temp.temperature;
   }
@@ -620,9 +616,10 @@ unsigned int Device::get_fan_speed() const {
   // RPM fan speed (nvmlDeviceGetFanSpeedRPM) is only declared by newer NVML
   // headers; older redists (e.g. ppc64le 12.9.79) lack it. The percentage fan
   // level remains available via get_fan_level().
-  nvmlFanSpeedInfo_t info = {};
-  info.version = nvmlFanSpeedInfo_v1;
-  info.fan = 0;
+  nvmlFanSpeedInfo_t info = {
+      .version = nvmlFanSpeedInfo_v1,
+      .fan = 0,
+  };
   auto ret = nvmlDeviceGetFanSpeedRPM(this->device, &info);
   if (ret != NVML_SUCCESS) {
     static bool did_warn = false;
@@ -661,8 +658,7 @@ unsigned int Device::get_fan_level() const {
 }
 
 unsigned int Device::get_power_one_sec_avg() const {
-  nvmlFieldValue_t query = {};
-  query.fieldId = NVML_FI_DEV_POWER_AVERAGE;
+  nvmlFieldValue_t query = {.fieldId = NVML_FI_DEV_POWER_AVERAGE};
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
   if (ret == NVML_SUCCESS) { ret = query.nvmlReturn; }
   if (ret != NVML_SUCCESS) {
@@ -679,8 +675,7 @@ unsigned int Device::get_power_one_sec_avg() const {
 }
 
 unsigned int Device::get_power_instant() const {
-  nvmlFieldValue_t query = {};
-  query.fieldId = NVML_FI_DEV_POWER_INSTANT;
+  nvmlFieldValue_t query = {.fieldId = NVML_FI_DEV_POWER_INSTANT};
   auto ret = nvmlDeviceGetFieldValues(this->device, 1, &query);
   if (ret == NVML_SUCCESS) { ret = query.nvmlReturn; }
   if (ret != NVML_SUCCESS) {
