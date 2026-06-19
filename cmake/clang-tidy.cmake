@@ -20,8 +20,8 @@ endforeach(TMP_INCLUDE)
 add_custom_target(clang-tidy
                   COMMAND ${ClangTidy_BIN} -config='' -fix -format-style=file
                           ${ClangTidy_SRCS}
-                          -- -std=c++17 -I${CMAKE_BINARY_DIR} ${CLANG_INCLUDES})
+                          -- -std=c++20 -I${CMAKE_BINARY_DIR} ${CLANG_INCLUDES})
 add_custom_target(check-clang-tidy
                   COMMAND ${ClangTidy_BIN} -config='' -format-style=file
                           ${ClangTidy_SRCS}
-                          -- -std=c++17 -I${CMAKE_BINARY_DIR} ${CLANG_INCLUDES})
+                          -- -std=c++20 -I${CMAKE_BINARY_DIR} ${CLANG_INCLUDES})

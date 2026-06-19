@@ -833,7 +833,7 @@ void print_pid_Xid(struct text_object *obj, char *p, int p_max_size,
           break;
       }
       errorstring.append(" in '{}'");
-      LOG_ERROR(errorstring.c_str(), pathstream.str().c_str());
+      LOG_ERROR(fmt::runtime(errorstring), pathstream.str().c_str());
     }
     free(buf);
   }
@@ -893,7 +893,7 @@ void internal_print_pid_vm(struct text_object *obj, char *p, int p_max_size,
       if (end != nullptr) { *(end) = 0; }
       snprintf(p, p_max_size, "%s", begin);
     } else {
-      LOG_ERROR(errorstring, pathstream.str().c_str());
+      LOG_ERROR(fmt::runtime(errorstring), pathstream.str().c_str());
     }
     free(buf);
   }
