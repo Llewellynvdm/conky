@@ -31,34 +31,12 @@
 #include <cstring>
 
 #include "../conky.h"
-#include "../logging.h"
 #include "wl.h"
 
 #ifdef BUILD_WAYLAND
 
-namespace priv {
-void out_to_wayland_setting::lua_setter(lua::state &l, bool init) {
-  lua::stack_sentry s(l, -2);
-
-  Base::lua_setter(l, init);
-
-  if (init && do_convert(l, -1).first) { LOG_DEBUG("wayland output enabled"); }
-
-  ++s;
-}
-
-void out_to_wayland_setting::cleanup(lua::state &l) {
-  lua::stack_sentry s(l, -1);
-
-  if (do_convert(l, -1).first) {
-    // deinit
-  }
-
-  l.pop();
-}
-}  // namespace priv
-
-priv::out_to_wayland_setting out_to_wayland;
+conky::simple_config_setting<bool> out_to_wayland("out_to_wayland", false,
+                                                  false);
 
 static const char NOT_IN_WAYLAND[] = "Not running in Wayland";
 

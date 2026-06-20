@@ -40,19 +40,6 @@
 
 #include "../lua/setting.hh"
 
-namespace priv {
-class out_to_wayland_setting : public conky::simple_config_setting<bool> {
-  typedef conky::simple_config_setting<bool> Base;
-
- protected:
-  virtual void lua_setter(lua::state &l, bool init);
-  virtual void cleanup(lua::state &l);
-
- public:
-  out_to_wayland_setting() : Base("out_to_wayland", false, false) {}
-};
-}  // namespace priv
-
-extern priv::out_to_wayland_setting out_to_wayland;
+extern conky::simple_config_setting<bool> out_to_wayland;
 
 #endif /* CONKY_WL_H */
