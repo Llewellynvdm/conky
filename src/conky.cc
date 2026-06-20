@@ -1749,12 +1749,20 @@ bool is_on_battery() {  // checks if at least one battery specified in
 volatile sig_atomic_t g_sigterm_pending, g_sighup_pending, g_sigusr2_pending;
 
 void get_system_details() {
-  char *session_ty = getenv("XDG_SESSION_TYPE");
-  if (session_ty == nullptr) {
-    info.system.session = conky::info::display_session::unknown;
-  } else if (std::strcmp(session_ty, "x11") == 0) {
+  // XDG_SESSION_TYPE is authoritative when present, but it's frequently unset
+  // or reports "tty"/"unspecified". Fall back to the protocol-specific display
+  // sockets: Wayland always exports WAYLAND_DISPLAY, and X11 virtually always
+  // exports DISPLAY. DISPLAY wins over WAYLAND_DISPLAY: when both are present
+  // an X server (Xwayland) is provably available and an X11 surface works on
+  // either session type, so it's the safe choice to commit to.
+  const char *session_ty = getenv("XDG_SESSION_TYPE");
+  if (session_ty != nullptr && std::strcmp(session_ty, "wayland") == 0) {
+    info.system.session = conky::info::display_session::wayland;
+  } else if (session_ty != nullptr && std::strcmp(session_ty, "x11") == 0) {
     info.system.session = conky::info::display_session::x11;
-  } else if (std::strcmp(session_ty, "wayland") == 0) {
+  } else if (getenv("DISPLAY") != nullptr) {
+    info.system.session = conky::info::display_session::x11;
+  } else if (getenv("WAYLAND_DISPLAY") != nullptr) {
     info.system.session = conky::info::display_session::wayland;
   } else {
     info.system.session = conky::info::display_session::unknown;
@@ -1892,11 +1900,22 @@ void get_system_details() {
   }
 #endif
 
-  if (session_ty != nullptr) {
+  const char *session_name = nullptr;
+  switch (info.system.session) {
+    case conky::info::display_session::x11:
+      session_name = "x11";
+      break;
+    case conky::info::display_session::wayland:
+      session_name = "wayland";
+      break;
+    case conky::info::display_session::unknown:
+      break;
+  }
+  if (session_name != nullptr) {
     if (info.system.wm_name != nullptr) {
-      LOG_INFO("'{}' {} session running", info.system.wm_name, session_ty);
+      LOG_INFO("'{}' {} session running", info.system.wm_name, session_name);
     } else {
-      LOG_INFO("unknown {} session running", session_ty);
+      LOG_INFO("unknown {} session running", session_name);
     }
   }
 }
