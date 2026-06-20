@@ -30,7 +30,6 @@
 #include "../content/colours.hh"
 #include "display-ncurses.hh"
 #include "gui.h"
-#include "nc.h"
 
 #include <iostream>
 #include <sstream>
@@ -38,7 +37,10 @@
 
 #include <ncurses.h>
 
-extern WINDOW* ncurses_window;
+WINDOW* ncurses_window;
+
+conky::simple_config_setting<bool> out_to_ncurses("out_to_ncurses", false,
+                                                  false);
 
 namespace conky {
 namespace {
@@ -102,6 +104,9 @@ bool display_output_ncurses::detect() {
 }
 
 bool display_output_ncurses::initialize() {
+  ncurses_window = initscr();
+  start_color();
+
   for (int i = 0; i < COLORS_CUSTOM; i++) {
     Colour c = color[i].get(*state);
     init_color(COLORS_BUILTIN + i, (1000 * c.red) / 255, (1000 * c.green) / 255,
@@ -113,7 +118,13 @@ bool display_output_ncurses::initialize() {
   return is_active;
 }
 
-bool display_output_ncurses::shutdown() { return false; }
+bool display_output_ncurses::shutdown() {
+  if (ncurses_window != nullptr) {
+    endwin();
+    ncurses_window = nullptr;
+  }
+  return false;
+}
 
 void display_output_ncurses::set_foreground_color(Colour c) {
   int nccolor = to_ncurses(c);

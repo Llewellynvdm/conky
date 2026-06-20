@@ -124,7 +124,6 @@
 #include "data/timeinfo.h"
 #include "data/top.h"
 #include "logging.h"
-#include "output/nc.h"
 
 #ifdef BUILD_MYSQL
 #include "data/mysql.h"

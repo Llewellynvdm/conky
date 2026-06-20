@@ -28,7 +28,10 @@
 
 #include "../conky.h"
 #include "display-console.hh"
-#include "nc.h"
+
+#ifdef BUILD_NCURSES
+extern conky::simple_config_setting<bool> out_to_ncurses;
+#endif
 
 #include <iostream>
 #include <sstream>

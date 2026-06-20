@@ -28,7 +28,6 @@
 
 #include "../conky.h"
 #include "display-file.hh"
-#include "nc.h"
 
 #include <cerrno>
 #include <iostream>

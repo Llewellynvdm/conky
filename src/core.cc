@@ -75,7 +75,6 @@
 #include "data/network/net_stat.h"
 #include "logging.h"
 #include "lua/llua.h"
-#include "output/nc.h"
 
 #ifdef BUILD_NVIDIA
 #include "data/hardware/nvidia_XNVCtrl.h"
@@ -135,6 +134,10 @@
 
 #include <cctype>
 #include <cstring>
+
+#ifdef BUILD_NCURSES
+extern conky::simple_config_setting<bool> out_to_ncurses;
+#endif
 
 /* strip a leading /dev/ if any, following symlinks first
  *

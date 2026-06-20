@@ -501,8 +501,6 @@ endif(BUILD_ICONV)
 
 if(BUILD_NCURSES)
   set(ncurses_srcs
-    output/nc.cc
-    output/nc.h
     output/display-ncurses.cc
     output/display-ncurses.hh
   )

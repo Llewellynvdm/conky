@@ -73,6 +73,12 @@
 #endif /* BUILD_OLD_CONFIG */
 #endif /* BUILD_BUILTIN_CONFIG */
 
+#ifdef LEAKFREE_NCURSES
+// libncurses-internal teardown used to free memory tracked by leak checkers;
+// the `_nc_` prefix is ncurses' own exported symbol name.
+extern "C" void _nc_free_and_exit(int);
+#endif
+
 static void print_short_version() { std::cout << VERSION << std::endl; }
 
 static void print_version() {

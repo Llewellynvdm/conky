@@ -33,7 +33,6 @@
 #endif /* BUILD_GUI */
 #include <cmath>
 #include "../logging.h"
-#include "../output/nc.h"
 #include "specials.h"
 #ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
@@ -45,6 +44,10 @@
 #include "../conky.h"
 #include "../output/display-output.hh"
 #include "colours.hh"
+
+#ifdef BUILD_NCURSES
+extern conky::simple_config_setting<bool> out_to_ncurses;
+#endif
 
 struct special_node *specials = nullptr;
 
