@@ -439,11 +439,37 @@ void window_commit_buffer(window *window);
 
 void window_get_width_height(window *window, int *w, int *h);
 
-/// @brief Maps the configured `own_window_type` onto a wlr-layer-shell layer.
+/// @brief Whether `own_window_hints` request behaviour that only the layer
+/// shell can provide.
 ///
-/// Desktop widgets sit on the background, docks below regular windows, and
-/// panels above them; everything else keeps the historical bottom layer.
-static zwlr_layer_shell_v1_layer layer_for_window_type() {
+/// xdg-shell toplevels are always compositor-managed: they stack among regular
+/// windows and are bound to a single workspace. Hints asking for the opposite
+/// (`below`/`above` stacking or `sticky` across workspaces) can therefore only
+/// be honoured by mounting the surface on a wlr-layer-shell layer. (Layer
+/// surfaces are also intrinsically skipped by taskbars/pagers, so those hints
+/// need no special handling here.)
+static bool hints_require_layer_shell() {
+  uint16_t hints = own_window_hints.get(*state);
+  return TEST_HINT(hints, window_hints::BELOW) ||
+         TEST_HINT(hints, window_hints::ABOVE) ||
+         TEST_HINT(hints, window_hints::STICKY);
+}
+
+/// @brief Maps the configured `own_window_type` and `own_window_hints` onto a
+/// wlr-layer-shell layer.
+///
+/// Explicit `above`/`below` hints take precedence and pick the top/bottom
+/// layer. Otherwise the window type decides: desktop widgets sit on the
+/// background, docks below regular windows, and panels above them; everything
+/// else keeps the historical bottom layer.
+static zwlr_layer_shell_v1_layer layer_for_window() {
+  uint16_t hints = own_window_hints.get(*state);
+  if (TEST_HINT(hints, window_hints::ABOVE)) {
+    return ZWLR_LAYER_SHELL_V1_LAYER_TOP;
+  }
+  if (TEST_HINT(hints, window_hints::BELOW)) {
+    return ZWLR_LAYER_SHELL_V1_LAYER_BOTTOM;
+  }
   switch (own_window_type.get(*state)) {
     case window_type::DESKTOP:
       return ZWLR_LAYER_SHELL_V1_LAYER_BACKGROUND;
@@ -661,23 +687,26 @@ bool display_output_wayland::initialize() {
   // An own_window of normal/utility type becomes a regular compositor-managed
   // toplevel; everything else (desktop/dock/panel, or no own_window) mounts as
   // a layer surface, falling back to an xdg toplevel when the compositor lacks
-  // wlr-layer-shell.
+  // wlr-layer-shell. own_window_hints that only a layer surface can satisfy
+  // (below/above/sticky) also force the layer path.
   window_type type = own_window_type.get(*state);
-  bool want_toplevel = own_window.get(*state) && (type == window_type::NORMAL ||
-                                                  type == window_type::UTILITY);
+  bool hints_layer_shell =
+      own_window.get(*state) &&
+      (type == window_type::NORMAL || type == window_type::UTILITY) &&
+      !hints_require_layer_shell();
   auto on_close = []() { g_sigterm_pending = 1; };
 
-  if (!want_toplevel && wl_globals.layer_shell != nullptr) {
+  if (!hints_layer_shell && wl_globals.layer_shell != nullptr) {
     global_window->shell =
         conky::create_shell_surface<conky::layer_shell_surface>({
             on_close,
             global_window->surface,
             wl_globals.layer_shell,
-            static_cast<uint32_t>(layer_for_window_type()),
+            static_cast<uint32_t>(layer_for_window()),
             "conky",
         });
   } else {
-    if (!want_toplevel) {
+    if (!hints_layer_shell) {
       LOG_WARNING(
           "compositor lacks wlr-layer-shell; falling back to an xdg-shell "
           "toplevel (desktop/dock/panel space reservation unavailable)");

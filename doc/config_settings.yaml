@@ -427,7 +427,7 @@ values:
       - color
   - name: own_window_hints
     desc: |-
-      If [`own_window`](#own_window) is set, on X11 you may specify comma separated window
+      If [`own_window`](#own_window) is set, you may specify comma separated window
       manager hints to affect the way Conky displays.
 
       Following hints are some of the standard WM specification ones:
@@ -446,6 +446,14 @@ values:
       Notes:
       - Use `own_window_type='desktop'` setting as another way to implement many of these hints implicitly.
       - If you use `own_window_type='override'`, window manager hints have no meaning and are ignored.
+      - Under Wayland these hints are translated to a wlr-layer-shell placement
+        (the compositor must support that protocol). A `normal` or `utility`
+        window that would otherwise be a regular toplevel is instead mounted as
+        a layer surface when any of `below`, `above` or `sticky` is set:
+        `below`/`above` pick the bottom/top layer, while `sticky` (shown across
+        all workspaces), `skip_taskbar` and `skip_pager` are intrinsic to layer
+        surfaces. `undecorated` is implicit since layer surfaces are never
+        decorated.
     args:
       - hint(,hint)*
   - name: own_window_title
