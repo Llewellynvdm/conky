@@ -87,46 +87,8 @@ MHD_Result sendanswer(void *cls, struct MHD_Connection *connection,
   return ret;
 }
 
-class out_to_http_setting : public conky::simple_config_setting<bool> {
-  typedef conky::simple_config_setting<bool> Base;
-
- protected:
-  virtual void lua_setter(lua::state &l, bool init) {
-    lua::stack_sentry s(l, -2);
-
-    Base::lua_setter(l, init);
-
-    if (init && do_convert(l, -1).first) {
-      /* warn about old default port */
-      if (http_port.get(*state) == 10080) {
-        LOG_WARNING(
-            "port {} is blocked by browsers like Firefox and Chromium, "
-            "you may want to change http_port",
-            http_port.get(*state));
-      }
-      httpd =
-          MHD_start_daemon(MHD_USE_SELECT_INTERNALLY, http_port.get(*state),
-                           nullptr, NULL, &sendanswer, nullptr, MHD_OPTION_END);
-    }
-
-    ++s;
-  }
-
-  virtual void cleanup(lua::state &l) {
-    lua::stack_sentry s(l, -1);
-
-    if (do_convert(l, -1).first) {
-      MHD_stop_daemon(httpd);
-      httpd = nullptr;
-    }
-
-    l.pop();
-  }
-
- public:
-  out_to_http_setting() : Base("out_to_http", false, false) {}
-};
-static out_to_http_setting out_to_http;
+static conky::simple_config_setting<bool> out_to_http("out_to_http", false,
+                                                      false);
 
 std::string string_replace_all(std::string original, const std::string &oldpart,
                                const std::string &newpart,
@@ -178,7 +140,7 @@ display_output_http::display_output_http() : display_output_base("http") {
 }
 
 bool display_output_http::detect() {
-  if (/*priv::*/ out_to_http.get(*state)) {
+  if (out_to_http.get(*state)) {
     LOG_DEBUG("display output '{}' enabled in config", name);
     return true;
   }
@@ -186,14 +148,29 @@ bool display_output_http::detect() {
 }
 
 bool display_output_http::initialize() {
-  if (/*priv::*/ out_to_http.get(*state)) {
-    is_active = true;
-    return true;
+  if (!out_to_http.get(*state)) { return false; }
+
+  /* warn about old default port */
+  if (http_port.get(*state) == 10080) {
+    LOG_WARNING(
+        "port {} is blocked by browsers like Firefox and Chromium, "
+        "you may want to change http_port",
+        http_port.get(*state));
   }
-  return false;
+  httpd = MHD_start_daemon(MHD_USE_SELECT_INTERNALLY, http_port.get(*state),
+                           nullptr, NULL, &sendanswer, nullptr, MHD_OPTION_END);
+
+  is_active = true;
+  return true;
 }
 
-bool display_output_http::shutdown() { return true; }
+bool display_output_http::shutdown() {
+  if (httpd != nullptr) {
+    MHD_stop_daemon(httpd);
+    httpd = nullptr;
+  }
+  return true;
+}
 
 void display_output_http::begin_draw_text() {
 #define WEBPAGE_START1                                             \
