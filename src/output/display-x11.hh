@@ -25,12 +25,8 @@
 
 #include "config.h"
 
-#include <limits>
 #include <memory>
-#include <string>
-#include <type_traits>
 
-#include "../lua/luamm.hh"
 #include "display-output.hh"
 
 namespace conky {
@@ -85,10 +81,9 @@ class display_output_x11 : public display_output_base {
 
   virtual std::weak_ptr<conky::draw_surface> drawing_surface();
 
-#ifdef BUILD_LUA_CAIRO_XLIB
-  /// (Re)create the cairo xlib surface for the current drawable/geometry.
+  /// (Re)create the cairo xlib surface for the current drawable/geometry if
+  /// `BUILD_LUA_CAIRO_XLIB` is enabled, no-op otherwise.
   void update_surface();
-#endif /* BUILD_LUA_CAIRO_XLIB */
 
   // X11-specific
  private:

@@ -2422,17 +2422,10 @@ void initialisation(int argc, char **argv) {
         own_window.lua_set(*state);
         break;
 #endif
-#ifdef BUILD_XDBE
       case 'b':
         state->pushboolean(true);
-        use_xdbe.lua_set(*state);
+        use_double_buffer.lua_set(*state);
         break;
-#else
-      case 'b':
-        state->pushboolean(true);
-        use_xpmdb.lua_set(*state);
-        break;
-#endif
 #endif /* BUILD_X11 */
       case 't':
         free_and_zero(global_text);

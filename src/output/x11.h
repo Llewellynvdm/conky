@@ -31,7 +31,10 @@
 #error x11.h included when BUILD_X11 is disabled
 #endif
 
+extern "C" {
+#include <X11/X.h>
 #include <X11/Xatom.h>
+#include <X11/Xutil.h>
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wvariadic-macros"
 #include <X11/Xlib.h>
@@ -46,16 +49,16 @@
 #ifdef BUILD_XDAMAGE
 #include <X11/extensions/Xdamage.h>
 #endif
+#ifdef BUILD_XFIXES
+#include <X11/extensions/Xfixes.h>
+#endif
+}
 
 #include <cstdint>
 #include <functional>
 #include <vector>
 
-// TODO: remove lua requirement from x11_init_window
-#include "../lua/llua.h"
-
 #include "../geometry.h"
-#include "gui.h"
 #include "x11-event.h"
 
 #define ATOM(a) XInternAtom(display, #a, False)
@@ -67,9 +70,19 @@ extern int screen;
 
 constexpr int argb8888_color_depth = 32;
 
+#ifndef BUILD_XFIXES
+using XserverRegion = XID;
+#endif
 #ifndef BUILD_XDAMAGE
 using Damage = XID;
-using XserverRegion = XID;
+#endif
+#ifndef BUILD_XFT
+using XftDraw = void;
+#endif
+#ifdef BUILD_XDBE
+using back_buffer_t = XdbeBackBuffer;
+#else
+using back_buffer_t = Pixmap;
 #endif
 
 struct conky_x11_window {
@@ -120,14 +133,9 @@ struct conky_x11_window {
   /// is unioned into `damage_region`.
   XserverRegion damage_scratch = 0;
 
-#ifdef BUILD_XDBE
-  XdbeBackBuffer back_buffer;
-#else  /*BUILD_XDBE*/
-  Pixmap back_buffer;
-#endif /*BUILD_XDBE*/
-#ifdef BUILD_XFT
+  back_buffer_t back_buffer;
   XftDraw *xftdraw;
-#endif /*BUILD_XFT*/
+
   /// XInput2 extension opcode; 0 if unavailable.
   std::int32_t xi_opcode;
 
@@ -229,10 +237,6 @@ std::vector<Window> query_x11_windows_at_pos(
         [](XWindowAttributes &a) { return true; },
     bool eager = false);
 
-#ifdef BUILD_XDBE
-void xdbe_swap_buffers(void);
-#else
-void xpmdb_swap_buffers(void);
-#endif /* BUILD_XDBE */
+void swap_x11_buffers();
 
 #endif /* CONKY_X11_H */

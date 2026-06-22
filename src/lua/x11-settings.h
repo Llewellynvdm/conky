@@ -13,10 +13,6 @@ extern conky::simple_config_setting<bool> out_to_x;
 extern conky::simple_config_setting<bool> use_xft;
 #endif
 
-#ifdef BUILD_XDBE
-extern conky::simple_config_setting<bool> use_xdbe;
-#else
-extern conky::simple_config_setting<bool> use_xpmdb;
-#endif
+extern conky::simple_config_setting<bool> use_double_buffer;
 
 #endif /* CONKY_X11_SETTINGS_H */

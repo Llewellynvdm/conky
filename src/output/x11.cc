@@ -118,11 +118,7 @@ conky::simple_config_setting<bool> out_to_x("out_to_x", true, false);
 conky::simple_config_setting<bool> use_xft("use_xft", false, false);
 #endif
 conky::simple_config_setting<bool> forced_redraw("forced_redraw", false, false);
-#ifdef BUILD_XDBE
-conky::simple_config_setting<bool> use_xdbe("double_buffer", false, false);
-#else
-conky::simple_config_setting<bool> use_xpmdb("double_buffer", false, false);
-#endif
+conky::simple_config_setting<bool> use_double_buffer("double_buffer", false, false);
 
 /* local prototypes */
 static Window find_desktop_window(Window *p_root, Window *p_desktop);
@@ -1434,19 +1430,17 @@ void set_struts() {
 }
 #endif /* OWN_WINDOW */
 
+void swap_x11_buffers() {
 #ifdef BUILD_XDBE
-void xdbe_swap_buffers() {
-  if (use_xdbe.get(*state)) {
+  if (use_double_buffer.get(*state)) {
     XdbeSwapInfo swap;
 
     swap.swap_window = window.window;
     swap.swap_action = XdbeBackground;
     XdbeSwapBuffers(display, &swap, 1);
   }
-}
-#else
-void xpmdb_swap_buffers(void) {
-  if (use_xpmdb.get(*state)) {
+#else /* BUILD_XDBE */
+  if (use_double_buffer.get(*state)) {
     XCopyArea(display, window.back_buffer, window.window, window.gc, 0, 0,
               window.geometry.width(), window.geometry.height(), 0, 0);
     Colour c = get_background_colour_preference(*state);
@@ -1459,8 +1453,8 @@ void xpmdb_swap_buffers(void) {
                    window.geometry.width(), window.geometry.height());
     XFlush(display);
   }
-}
 #endif /* BUILD_XDBE */
+}
 
 void print_kdb_led(const int keybit, char *p, unsigned int p_max_size) {
   XKeyboardState x;

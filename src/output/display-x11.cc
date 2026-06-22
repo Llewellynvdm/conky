@@ -240,19 +240,14 @@ bool display_output_x11::initialize() {
   init_x11();
   x11_init_window(*state);
 
-#if defined(BUILD_XDBE)
-  auto &double_buffer = use_xdbe;
-#else
-  auto &double_buffer = use_xpmdb;
-#endif
-  if (double_buffer.get(*state)) {
+  if (use_double_buffer.get(*state)) {
     if (!x11_set_up_double_buffer(*state)) {
       // double buffering unavailable; reflect that in the value consumers read
       state->pushboolean(false);
-      double_buffer.lua_set(*state);
+      use_double_buffer.lua_set(*state);
     }
     LOG_INFO("drawing to {} buffer",
-             double_buffer.get(*state) ? "double" : "single");
+             use_double_buffer.get(*state) ? "double" : "single");
   }
 
 #ifdef BUILD_IMLIB2
@@ -260,9 +255,7 @@ bool display_output_x11::initialize() {
 #endif /* BUILD_IMLIB2 */
 
   X11_create_window();
-#ifdef BUILD_LUA_CAIRO_XLIB
   update_surface();
-#endif /* BUILD_LUA_CAIRO_XLIB */
   return true;
 }
 
@@ -328,9 +321,9 @@ bool display_output_x11::main_loop_wait(double t) {
         set_transparent_background(&window);
 #ifdef BUILD_XDBE
         /* swap buffers */
-        xdbe_swap_buffers();
+        swap_x11_buffers();
 #else
-        if (use_xpmdb.get(*state)) {
+        if (use_double_buffer.get(*state)) {
           XFreePixmap(display, window.back_buffer);
           unsigned int depth = window.color_depth != 0
                                    ? window.color_depth
@@ -359,9 +352,7 @@ bool display_output_x11::main_loop_wait(double t) {
 #endif
 
         changed++;
-#ifdef BUILD_LUA_CAIRO_XLIB
         update_surface();
-#endif /* BUILD_LUA_CAIRO_XLIB */
       }
 
       /* move window if it isn't in right position */
@@ -386,11 +377,7 @@ bool display_output_x11::main_loop_wait(double t) {
 
     clear_text(1);
 
-#if defined(BUILD_XDBE)
-    if (use_xdbe.get(*state)) {
-#else
-    if (use_xpmdb.get(*state)) {
-#endif
+    if (use_double_buffer.get(*state)) {
       XRectangle rect = conky::rect<int>(text_start - border_total,
                                          text_size + border_total * 2)
                             .to_xrectangle();
@@ -415,11 +402,7 @@ bool display_output_x11::main_loop_wait(double t) {
    * all, then no swap happens and we can safely do nothing. */
 
   if (XEmptyRegion(window.repaint_region) == 0) {
-#if defined(BUILD_XDBE)
-    if (use_xdbe.get(*state)) {
-#else
-    if (use_xpmdb.get(*state)) {
-#endif
+    if (use_double_buffer.get(*state)) {
       XRectangle rect = conky::rect<int>(text_start - border_total,
                                          text_size + border_total * 2)
                             .to_xrectangle();
@@ -1012,23 +995,16 @@ float display_output_x11::get_dpi_scale() {
 }
 
 void display_output_x11::end_draw_stuff() {
-#if defined(BUILD_XDBE)
-  xdbe_swap_buffers();
-#else
-  xpmdb_swap_buffers();
-#endif
+  swap_x11_buffers();
 }
 
 void display_output_x11::clear_text(int exposures) {
-#ifdef BUILD_XDBE
-  if (use_xdbe.get(*state)) {
+  if (use_double_buffer.get(*state)) {
     /* The swap action is XdbeBackground, which clears */
     return;
   }
-#else
-  if (use_xpmdb.get(*state)) {
-    return;
-  } else
+#ifndef BUILD_XDBE
+  else
 #endif
   if ((display != nullptr) &&
       (window.window != 0u)) {  // make sure these are !null
@@ -1193,14 +1169,14 @@ void display_output_x11::load_fonts(bool utf8) {
   }
 }
 
-#ifdef BUILD_LUA_CAIRO_XLIB
 void display_output_x11::update_surface() {
+  #ifdef BUILD_LUA_CAIRO_XLIB
   current_surface.reset(cairo_xlib_surface_create(
                             display, window.drawable, window.visual,
                             window.geometry.width(), window.geometry.height()),
                         cairo_surface_destroy);
+  #endif /* BUILD_LUA_CAIRO_XLIB */
 }
-#endif /* BUILD_LUA_CAIRO_XLIB */
 
 std::weak_ptr<conky::draw_surface> display_output_x11::drawing_surface() {
 #ifdef BUILD_LUA_CAIRO_XLIB
