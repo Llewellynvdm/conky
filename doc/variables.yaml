@@ -1570,6 +1570,8 @@ values:
       | `gpuutil`          |             | GPU utilization %                                               | ✅      | ✅   |
       | `membwutil`        |             | Memory bandwidth utilization %                                  | ✅      | ❌   |
       | `videoutil`        |             | Video engine utilization %                                      | ✅      | ❌   |
+      | `videodecutil`     |             | Video decoder utilization %                                     | ❌      | ✅   |
+      | `videoencutil`     |             | Video encoder utilization %                                     | ❌      | ✅   |
       | `pcieutil`         |             | PCIe bandwidth utilization %                                    | ✅      | ❌   |
       | `memused`          | `mem`       | Amount of used memory                                           | ✅      | ✅   |
       | `memfree`          | `memavail`  | Amount of free memory                                           | ✅      | ✅   |

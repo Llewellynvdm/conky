@@ -60,6 +60,8 @@ class Device {
   unsigned int get_mem_freq() const;
   unsigned int get_sm_freq() const;
   unsigned int get_video_freq() const;
+  unsigned int get_video_dec_util() const;
+  unsigned int get_video_enc_util() const;
 
   unsigned int get_gpu_util() const;
 

@@ -578,6 +578,36 @@ unsigned int Device::get_video_freq() const {
   return this->get_clock_freq(NVML_CLOCK_VIDEO, &did_warn);
 }
 
+unsigned int Device::get_video_dec_util() const {
+  unsigned int util = 0;
+  unsigned int sampling = 0;
+  auto ret = nvmlDeviceGetDecoderUtilization(this->device, &util, &sampling);
+  if (ret != NVML_SUCCESS) {
+    static bool did_warn = false;
+    if (!did_warn) {
+      LOG_WARNING("Unable to get video decoder utilization: {}", nvml_error_string(ret));
+      did_warn = true;
+    }
+    return 0;
+  }
+  return util;
+}
+
+unsigned int Device::get_video_enc_util() const {
+  unsigned int util = 0;
+  unsigned int sampling = 0;
+  auto ret = nvmlDeviceGetEncoderUtilization(this->device, &util, &sampling);
+  if (ret != NVML_SUCCESS) {
+    static bool did_warn = false;
+    if (!did_warn) {
+      LOG_WARNING("Unable to get video encoder utilization: {}", nvml_error_string(ret));
+      did_warn = true;
+    }
+    return 0;
+  }
+  return util;
+}
+
 unsigned int Device::get_gpu_util() const {
   nvmlUtilization_t util = {};
   auto ret = nvmlDeviceGetUtilizationRates(this->device, &util);
@@ -761,6 +791,9 @@ enum class QueryAttribute : uint8_t {
 
   GPUUtil,
 
+  VideoDecUtil,
+  VideoEncUtil,
+
   MemUsed,
   MemFree,
   MemMax,
@@ -844,6 +877,8 @@ const ParsedQuery::attribute_map_type ParsedQuery::attr_names_nvidia = {
     {"gpufreqmin", QueryAttribute::GPUFreqMin},
     {"gpufreqmax", QueryAttribute::GPUFreqMax},
     {"gpuutil", QueryAttribute::GPUUtil},
+    {"videodecutil", QueryAttribute::VideoDecUtil},
+    {"videoencutil", QueryAttribute::VideoEncUtil},
     {"memused", QueryAttribute::MemUsed},
     {"memfree", QueryAttribute::MemFree},
     {"memmax", QueryAttribute::MemMax},
@@ -876,6 +911,8 @@ const ParsedQuery::attribute_map_type ParsedQuery::attr_names_nvidiabar = {
     {"gputemp", QueryAttribute::GPUTemp},
     {"gpufreqcur", QueryAttribute::GPUFreq},
     {"gpuutil", QueryAttribute::GPUUtil},
+    {"videodecutil", QueryAttribute::VideoDecUtil},
+    {"videoencutil", QueryAttribute::VideoEncUtil},
     {"memused", QueryAttribute::MemUsed},
     {"memfree", QueryAttribute::MemFree},
     {"memutil", QueryAttribute::MemUtil},
@@ -1072,6 +1109,18 @@ void print_nvml_value(text_object* obj, char* output, unsigned int max_output) {
 
     case QueryAttribute::GPUUtil: {
       auto util = device->get_gpu_util();
+      snprintf(output, max_output, "%u", util);
+      break;
+    }
+
+    case QueryAttribute::VideoDecUtil: {
+      auto util = device->get_video_dec_util();
+      snprintf(output, max_output, "%u", util);
+      break;
+    }
+
+    case QueryAttribute::VideoEncUtil: {
+      auto util = device->get_video_enc_util();
       snprintf(output, max_output, "%u", util);
       break;
     }
@@ -1285,6 +1334,12 @@ double get_nvml_percent_value(text_object* obj) {
     }
     case QueryAttribute::GPUUtil: {
       return device->get_gpu_util();
+    }
+    case QueryAttribute::VideoDecUtil: {
+      return device->get_video_dec_util();
+    }
+    case QueryAttribute::VideoEncUtil: {
+      return device->get_video_enc_util();
     }
     case QueryAttribute::MemUsed: {
       auto [good, info] = nvidiagraph_check_mem_info(device, "memused");
