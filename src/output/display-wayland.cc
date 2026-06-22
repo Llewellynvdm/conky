@@ -1143,7 +1143,12 @@ static void shm_pool_destroy(shm_pool *pool);
 static void shm_surface_data_destroy(void *p) {
   shm_surface_data *data = static_cast<shm_surface_data *>(p);
   wl_buffer_destroy(data->buffer);
-  if (data->pool) shm_pool_destroy(data->pool);
+
+  if (data->pool) { shm_pool_destroy(data->pool); }
+
+  // Make sure the wayland server knows about the buffer destroy and the pool
+  // destroy.
+  wl_display_roundtrip(global_display);
 
   delete data;
 }
@@ -1355,13 +1360,7 @@ window *window_create(wl_surface *surface, wl_shm *shm, int width, int height) {
 }
 
 void window_free_buffer(window *window) {
-  for (int i = 0; i < 2; ++i) {
-    if (!window->shm_surface[i]) continue;
-    auto *data = static_cast<shm_surface_data *>(cairo_surface_get_user_data(
-        window->shm_surface[i].get(), &shm_surface_data_key));
-    while (data && data->busy) { wl_display_dispatch(global_display); }
-  }
-  for (int i = 0; i < 2; ++i) { window->shm_surface[i] = nullptr; }
+  for (int i = 0; i < 2; ++i) { window->shm_surface[i].reset(); }
   window->cr = nullptr;
   window->cairo_surface = nullptr;
   if (window->layout) g_object_unref(window->layout);
