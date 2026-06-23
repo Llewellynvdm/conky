@@ -1573,6 +1573,8 @@ values:
       | `videodecutil`     |             | Video decoder utilization %                                     | ❌      | ✅   |
       | `videoencutil`     |             | Video encoder utilization %                                     | ❌      | ✅   |
       | `pcieutil`         |             | PCIe bandwidth utilization %                                    | ✅      | ❌   |
+      | `pciethroughputtx` |             | Data sent from the GPU (transmit) per second                    | ❌      | ✅   |
+      | `pciethroughputrx` |             | Data received by the GPU (receive) per second                   | ❌      | ✅   |
       | `memused`          | `mem`       | Amount of used memory                                           | ✅      | ✅   |
       | `memfree`          | `memavail`  | Amount of free memory                                           | ✅      | ✅   |
       | `memmax`           | `memtotal`  | Total amount of memory                                          | ✅      | ✅   |
@@ -1614,6 +1616,8 @@ values:
       * `memtotal` (`memmax`)
       * `fanspeed`
       * `powerlimit`
+      * `pciethroughputtx`
+      * `pciethroughputrx`
     args:
       - (height),(width)
       - argument

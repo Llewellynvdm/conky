@@ -608,6 +608,34 @@ unsigned int Device::get_video_enc_util() const {
   return util;
 }
 
+unsigned int Device::get_pcie_throughput_tx() const {
+  unsigned int tx;
+  auto ret = nvmlDeviceGetPcieThroughput(this->device, NVML_PCIE_UTIL_TX_BYTES, &tx);
+  if (ret != NVML_SUCCESS) {
+    static bool did_warn = false;
+    if (!did_warn) {
+      LOG_WARNING("Unable to get PCIe throughput (tx): {}", nvml_error_string(ret));
+      did_warn = true;
+    }
+    return 0;
+  }
+  return tx;
+}
+
+unsigned int Device::get_pcie_throughput_rx() const {
+  unsigned int rx;
+  auto ret = nvmlDeviceGetPcieThroughput(this->device, NVML_PCIE_UTIL_RX_BYTES, &rx);
+  if (ret != NVML_SUCCESS) {
+    static bool did_warn = false;
+    if (!did_warn) {
+      LOG_WARNING("Unable to get PCIe throughput (rx): {}", nvml_error_string(ret));
+      did_warn = true;
+    }
+    return 0;
+  }
+  return rx;
+}
+
 unsigned int Device::get_gpu_util() const {
   nvmlUtilization_t util = {};
   auto ret = nvmlDeviceGetUtilizationRates(this->device, &util);
@@ -794,6 +822,9 @@ enum class QueryAttribute : uint8_t {
   VideoDecUtil,
   VideoEncUtil,
 
+  PcieThroughputTx,
+  PcieThroughputRx,
+
   MemUsed,
   MemFree,
   MemMax,
@@ -879,6 +910,8 @@ const ParsedQuery::attribute_map_type ParsedQuery::attr_names_nvidia = {
     {"gpuutil", QueryAttribute::GPUUtil},
     {"videodecutil", QueryAttribute::VideoDecUtil},
     {"videoencutil", QueryAttribute::VideoEncUtil},
+    {"pciethroughputtx", QueryAttribute::PcieThroughputTx},
+    {"pciethroughputrx", QueryAttribute::PcieThroughputRx},
     {"memused", QueryAttribute::MemUsed},
     {"memfree", QueryAttribute::MemFree},
     {"memmax", QueryAttribute::MemMax},
@@ -1122,6 +1155,18 @@ void print_nvml_value(text_object* obj, char* output, unsigned int max_output) {
     case QueryAttribute::VideoEncUtil: {
       auto util = device->get_video_enc_util();
       snprintf(output, max_output, "%u", util);
+      break;
+    }
+
+    case QueryAttribute::PcieThroughputTx: {
+      auto throughput = device->get_pcie_throughput_tx();
+      human_readable(throughput * 1024LL, output, max_output);
+      break;
+    }
+
+    case QueryAttribute::PcieThroughputRx: {
+      auto throughput = device->get_pcie_throughput_rx();
+      human_readable(throughput * 1024LL, output, max_output);
       break;
     }
 

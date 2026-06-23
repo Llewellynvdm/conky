@@ -63,6 +63,9 @@ class Device {
   unsigned int get_video_dec_util() const;
   unsigned int get_video_enc_util() const;
 
+  unsigned int get_pcie_throughput_tx() const;
+  unsigned int get_pcie_throughput_rx() const;
+
   unsigned int get_gpu_util() const;
 
   nvmlPstates_t get_pstate() const;
