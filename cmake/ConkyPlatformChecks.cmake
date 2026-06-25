@@ -22,6 +22,7 @@ include(FindPkgConfig)
 include(CheckFunctionExists)
 include(CheckIncludeFiles)
 include(CheckSymbolExists)
+include(CheckLibraryExists)
 include(FetchContent)
 
 # Check for some headers
@@ -42,15 +43,15 @@ else(CMAKE_SYSTEM_NAME MATCHES "Darwin")
   check_symbol_exists(statfs64 "sys/statfs.h" HAVE_STATFS64)
 endif(CMAKE_SYSTEM_NAME MATCHES "Darwin")
 
-ac_search_libs(clock_gettime "time.h" CLOCK_GETTIME_LIB "rt")
-
-if(NOT DEFINED CLOCK_GETTIME_LIB)
-  if(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
+check_symbol_exists(clock_gettime "time.h" HAVE_CLOCK_GETTIME)
+if(NOT HAVE_CLOCK_GETTIME)
+  check_library_exists(rt clock_gettime "" HAVE_CLOCK_GETTIME_RT)
+  if(HAVE_CLOCK_GETTIME_RT)
+    set(CLOCK_GETTIME_LIB rt)
+  elseif(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
     message(FATAL_ERROR "clock_gettime not found.")
-  endif(NOT CMAKE_SYSTEM_NAME MATCHES "Darwin")
-else(NOT DEFINED CLOCK_GETTIME_LIB)
-  set(HAVE_CLOCK_GETTIME 1)
-endif(NOT DEFINED CLOCK_GETTIME_LIB)
+  endif()
+endif()
 
 set(conky_libs ${conky_libs} ${CLOCK_GETTIME_LIB})
 

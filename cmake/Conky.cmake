@@ -18,8 +18,6 @@
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
 
-# set(RELEASE true)
-
 # Set system vars
 if(CMAKE_SYSTEM_NAME MATCHES "Linux")
   set(OS_LINUX true)
@@ -152,89 +150,34 @@ if(OS_HAIKU)
   )
 endif(OS_HAIKU)
 
-# Do version stuff
-set(VERSION_MAJOR "1")
-set(VERSION_MINOR "24")
-set(VERSION_PATCH "3")
-
 find_program(APP_AWK awk)
-
 if(NOT APP_AWK)
   message(FATAL_ERROR "Unable to find program 'awk'")
 endif(NOT APP_AWK)
+mark_as_advanced(APP_AWK)
 
 find_program(APP_WC wc)
-
 if(NOT APP_WC)
   message(FATAL_ERROR "Unable to find program 'wc'")
 endif(NOT APP_WC)
+mark_as_advanced(APP_WC)
 
 find_program(APP_UNAME uname)
-
 if(NOT APP_UNAME)
   message(FATAL_ERROR "Unable to find program 'uname'")
 endif(NOT APP_UNAME)
+mark_as_advanced(APP_UNAME)
 
 if(NOT RELEASE)
   find_program(APP_GIT git)
-
   if(NOT APP_GIT)
     message(FATAL_ERROR "Unable to find program 'git'")
   endif(NOT APP_GIT)
-
   mark_as_advanced(APP_GIT)
 endif(NOT RELEASE)
 
-mark_as_advanced(APP_AWK APP_WC APP_UNAME)
-
-execute_process(COMMAND ${APP_UNAME} -sm
-  RESULT_VARIABLE RETVAL
-  OUTPUT_VARIABLE BUILD_ARCH
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-execute_process(COMMAND ${APP_GIT} rev-parse --short HEAD
-  WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
-  RESULT_VARIABLE RETVAL
-  OUTPUT_VARIABLE GIT_SHORT_SHA
-  OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-set(RELEASE_VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
-
-if(RELEASE)
-  set(VERSION ${RELEASE_VERSION})
-else(RELEASE)
-  set(VERSION
-    "${RELEASE_VERSION}-pre-${GIT_SHORT_SHA}")
-endif(RELEASE)
-
-set(COPYRIGHT "Copyright Brenden Matthews, et al, 2005-2024")
-
-macro(AC_SEARCH_LIBS FUNCTION_NAME INCLUDES TARGET_VAR)
-  if("${TARGET_VAR}" MATCHES "^${TARGET_VAR}$")
-    unset(AC_SEARCH_LIBS_TMP CACHE)
-    check_symbol_exists(${FUNCTION_NAME} ${INCLUDES} AC_SEARCH_LIBS_TMP)
-
-    if(${AC_SEARCH_LIBS_TMP})
-      set(${TARGET_VAR} "" CACHE INTERNAL "Library containing ${FUNCTION_NAME}")
-    else(${AC_SEARCH_LIBS_TMP})
-      foreach(LIB ${ARGN})
-        unset(AC_SEARCH_LIBS_TMP CACHE)
-        unset(AC_SEARCH_LIBS_FOUND CACHE)
-        find_library(AC_SEARCH_LIBS_TMP ${LIB})
-        check_library_exists(${LIB}
-          ${FUNCTION_NAME}
-          ${AC_SEARCH_LIBS_TMP}
-          AC_SEARCH_LIBS_FOUND)
-
-        if(${AC_SEARCH_LIBS_FOUND})
-          set(${TARGET_VAR} ${AC_SEARCH_LIBS_TMP}
-            CACHE INTERNAL "Library containing ${FUNCTION_NAME}")
-          break()
-        endif(${AC_SEARCH_LIBS_FOUND})
-      endforeach(LIB)
-    endif(${AC_SEARCH_LIBS_TMP})
-  endif("${TARGET_VAR}" MATCHES "^${TARGET_VAR}$")
-endmacro(AC_SEARCH_LIBS)
+# Moved for labeler
+include(Version)
 
 # A function to print the target build properties
 function(print_target_properties tgt)

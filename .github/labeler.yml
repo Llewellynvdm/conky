@@ -171,6 +171,7 @@ lua:
           - src/data/os/freebsd.h
 
 'os: haiku':
+  
   - changed-files:
       - any-glob-to-any-file:
           - src/data/os/haiku.cc
@@ -227,8 +228,10 @@ calendar:
 nvidia:
   - changed-files:
       - any-glob-to-any-file:
-          - src/data/hardware/nvidia.cc
-          - src/data/hardware/nvidia.h
+          - src/data/hardware/nvidia_XNVCtrl.cc
+          - src/data/hardware/nvidia_XNVCtrl.h
+          - src/data/hardware/nvidia_nvml.cc
+          - src/data/hardware/nvidia_nvml.h
 
 rendering:
   - changed-files:
@@ -242,3 +245,8 @@ text:
   - changed-files:
       - any-glob-to-any-file:
           - src/content/**/*
+
+versioning:
+  - changed-files:
+      - any-glob-to-any-file:
+          - cmake/Version.cmake
